@@ -311,6 +311,27 @@ Raw ledger: reports/results_classical.csv (72 runs)
       built on unscaled features, letting Amount own ~99.9% of the distance
       budget); fixed and re-measured. See reports/bootstrap_ci.csv +
       reports/figures/bootstrap_ci.png.
+  [x] Benchmark replication on a published split - DONE
+      (src/data/dataset.py get_splits("sang"); reports/results_sang_split.csv):
+      Sang 2026 (EAI ISMLA) is the only located study evaluating ULB both
+      chronologically and randomly: XGBoost PR-AUC 0.7902 chronological vs
+      0.8815 random. Its 66/14/20 partition reproduces exactly from the public
+      CSV (187,972/39,873/56,962; frauds 368/49/75). PRE-REGISTERED in
+      reports/PREREGISTRATION_sang_split.md and committed BEFORE the run.
+        xgboost+class_weight    0.8055  (+0.0153 vs published = 0.37 SE)
+        xgboost+smote_enn       0.8102  (+0.0200 = 0.48 SE)
+        random_forest+smote_enn 0.8224  (+0.0322 = 0.77 SE)
+      READING (fixed in advance): REPLICATION, not improvement. Our closest
+      analogue lands 0.37 SE from the published value, recovering the same
+      57/75 frauds (FN=18) with 5 FP instead of 9. Primary protocol stays
+      70/15/15; these numbers replace nothing. Promoting the friendlier of two
+      splits would be the +0.059 selection effect this project documents.
+      SECOND AND LARGER FINDING: changing ONLY the split fractions moved PR-AUC
+      +0.033 mean, vs +0.035 for random-vs-chronological. The cut point is a
+      first-order methodological choice. Our 0.795 headline is conditioned on a
+      15% tail; a 20% tail gives 0.822. Logged in report section 7.2 and as a
+      named sensitivity in Limitations.
+
   [x] Final report/notebook consolidation - DONE:
       notebooks/02_final_report.ipynb (executed end-to-end) - leaderboard,
       per-family PR-AUC spread, findings A-I, split ablation, bootstrap CIs,

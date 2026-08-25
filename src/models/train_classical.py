@@ -207,6 +207,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", default=None, help="comma-separated subset")
     parser.add_argument("--strategies", default=None, help="comma-separated subset")
+    parser.add_argument("--split", default="time", choices=["time", "sang", "random"],
+                        help="evaluation protocol; 'sang' is the 66/14/20 replication check")
     args = parser.parse_args()
 
     all_models = ["logreg", "decision_tree", "gaussian_nb", "linear_svc",
@@ -215,7 +217,7 @@ def main():
     models = args.models.split(",") if args.models else all_models
     strategies = args.strategies.split(",") if args.strategies else all_strategies
 
-    splits = get_splits()
+    splits = get_splits(args.split)
     from sklearn.preprocessing import StandardScaler
 
     gan_scaler = StandardScaler().fit(splits[0])
@@ -247,6 +249,19 @@ def main():
                 print(f"{tag} FAILED: {type(e).__name__}: {e}")
 
     new_results = pd.DataFrame(rows)
+    if args.split != "time":
+        # replication / ablation protocols get their own ledger; the primary
+        # results_classical.csv is never overwritten by a non-default split.
+        out = config.REPORTS / f"results_{args.split}_split.csv"
+        new_results["split"] = args.split
+        if out.exists():
+            old_rows = pd.read_csv(out)
+            keys = set(zip(new_results["model"], new_results["strategy"]))
+            keep = ~old_rows.apply(lambda r: (r["model"], r["strategy"]) in keys, axis=1)
+            new_results = pd.concat([old_rows[keep], new_results], ignore_index=True)
+        new_results.to_csv(out, index=False)
+        print(f"Saved -> {out}")
+        return
     full_sweep = args.models is None and args.strategies is None
     if RESULTS_CSV.exists() and not full_sweep:
         old = pd.read_csv(RESULTS_CSV)

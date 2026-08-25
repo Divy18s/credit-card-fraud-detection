@@ -1,6 +1,7 @@
 # Credit Card Fraud Detection — ML · DL · GNN
 
-> **Status: complete.** 72 time-split runs + 12 split-ablation runs + 6 bootstrap configs.
+> **Status: complete.** 72 time-split runs + 12 split-ablation runs + 6 bootstrap configs
+> + 3 pre-registered replication runs on a published paper's exact split.
 > Start here → `notebooks/02_final_report.ipynb` (executed final report).
 
 End-to-end fraud detection on the [Kaggle ULB Credit Card dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
@@ -32,8 +33,9 @@ XGBoost/CatBoost also run on GPU via `device="cuda"`; LightGBM stays on CPU.
 | 5. Split ablation | `python -m src.models.ablation_random_split` | `reports/results_random_split.csv` |
 | 6. Explainability | `python -m src.models.explain_shap` | `reports/shap_summary.txt`, figures |
 | 7. Bootstrap CIs | `python -m src.models.bootstrap_ci` | `reports/bootstrap_ci.csv`, figure |
-| 8. Demo app | `.venv\Scripts\streamlit run app/streamlit_app.py` | browser UI |
-| 9. Final report | open `notebooks/02_final_report.ipynb` (kernel: `.venv`) | full submission report |
+| 8. Benchmark replication | `python -m src.models.train_classical --split sang --models xgboost,random_forest --strategies class_weight,smote_enn` | `reports/results_sang_split.csv` |
+| 9. Demo app | `.venv\Scripts\streamlit run app/streamlit_app.py` | browser UI |
+| 10. Final report | open `notebooks/02_final_report.ipynb` (kernel: `.venv`) | full submission report |
 
 ## Uncertainty (bootstrap)
 
@@ -41,6 +43,45 @@ Stratified resampling of the test set ×1,000 per model gives 95% CIs of width
 **~0.20–0.24 PR-AUC** for every tier representative — **all pairs overlap**
 (statistical ties). At 52 test frauds, no model is separable from another;
 the honest conclusion is a shared ~0.72–0.89 band, not a ranking.
+
+## Benchmark replication — same split as the published paper
+
+The closest published study, [Sang 2026 (EAI ISMLA)](https://publications.eai.eu/index.php/ismla/article/view/12078),
+is the only one we found that evaluates ULB **chronologically** as well as randomly. It reports
+XGBoost PR-AUC **0.7902** chronological / **0.8815** random stratified, using cost-sensitive
+weighting (no resampling), Optuna, a validation-tuned threshold and SHAP — the same protocol
+shape as this project.
+
+Its partition reproduces exactly from the public CSV: 66/14/20 on time-sorted, **non-deduplicated**
+rows gives 187,972 / 39,873 / 56,962 with 368 / 49 / 75 frauds, matching the paper to the unit.
+We re-ran three configurations on it. The question, the configs and the reading of each outcome
+were fixed in [`reports/PREREGISTRATION_sang_split.md`](reports/PREREGISTRATION_sang_split.md)
+and committed **before** the run, so the ordering is verifiable from git history.
+
+| Config | our 70/15/15 | on their 66/14/20 | Δ from split alone | vs their 0.7902 |
+|---|---|---|---|---|
+| XGBoost + class_weight | 0.7688 | **0.8055** | +0.0367 | +0.0153 (**0.37 SE**) |
+| XGBoost + SMOTE-ENN | 0.7766 | **0.8102** | +0.0336 | +0.0200 (0.48 SE) |
+| RF + SMOTE-ENN (champion) | 0.7947 | **0.8224** | +0.0276 | +0.0322 (0.77 SE) |
+
+**Result 1 — replication, not improvement.** Our XGBoost with validation-selected class weighting
+(the closest analogue: neither model uses synthetic resampling) lands **0.37 standard errors**
+from their published figure, recovering exactly the same 57 of 75 frauds (identical FN=18) with
+5 false positives instead of 9. That is a replication. The margin is far too small to claim we
+beat them, and no such claim is made — **our primary protocol remains 70/15/15 and no headline
+number is replaced.** Promoting the friendlier of two splits would be exactly the selection
+effect this project measures at +0.059.
+
+**Result 2 — split fractions are a first-order choice.** Changing *only* the fractions (same
+chronological protocol, same data, same models, same code) moved PR-AUC **+0.033 on average** —
+against a measured random-vs-chronological inflation of **+0.035**. Choosing a 20% tail instead
+of 15% shifts the number about as much as abandoning chronological evaluation altogether. Part of
+the mechanism: their test window starts 1.7 h earlier at a higher fraud prevalence (0.1317% vs
+0.1217%), and average precision is bounded below by the positive rate.
+
+Stated against our own interest: **the 0.795 headline is conditioned on a 15% tail, and a
+defensible alternative choice would have given 0.822.** One more reason to read these numbers as
+a band, not a ranking. Details: report §7.2.
 
 ## Demo App
 
@@ -105,9 +146,9 @@ conclusion changes and the GAT comparison stands. Reproduce:
 - **GAN-synthesized fraud is a top-tier strategy for boosting**: CatBoost+GAN ties RF+hybrid's error profile (97.5% precision @ 75% recall); LightGBM+GAN fixes LightGBM's raw weakness — supports Transformer-GAN (2025) direction, though gains are model-dependent
 - **Cross-family stacking works; same-family ensembling doesn't**: averaging RF+MLP+LSTM (0.785, highest ROC-AUC 0.985) beats every individual deep model, while a 5-seed LSTM ensemble (0.775) does not beat its own members — diversity across *families* is what pays off
 - Sequence modeling adds value over plain MLP; bidirectionality is redundant; feature-level-style synthetic resampling hurts RNNs
-- **GNN on a feature-similarity k-NN graph is competitive with plain MLPs** (SAGE 0.756) even though ULB has no relational entities — HGNN papers' higher numbers (AUC-PR ≈ 0.89) require real cardholder/merchant graphs; attention (GATv2, 0.745) adds cost without accuracy here
+- **GNN on a feature-similarity k-NN graph is competitive with plain MLPs** (SAGE 0.756) even though ULB has no relational entities — the AUC-PR ≈ 0.89 figure belongs to HG-AE (arXiv:2410.08121) and requires real cardholder/merchant graphs; attention (GATv2, 0.745) adds cost without accuracy here
 - FT-Transformer (0.681) loses to boosting and even to the MLP — matches Yu et al. 2024 / KAIS 2026 conclusions on tabular fraud data
-- Time-based splits yield lower PR-AUC (~0.79) than inflated random-split numbers (~0.88+) — expected and more realistic
+- Time-based splits yield lower PR-AUC (~0.79) than random-split numbers (~0.88) — confirmed independently by Sang 2026, which measures the same gap at +0.091 on one model. But see *Benchmark replication* above: the **cut point** matters nearly as much as the protocol (+0.033), so neither number is a fixed property of the dataset
 
 **Phase 5 — Optuna tuning (53 runs total):** tuning *repairs* weak configs rather than lifting champions — LightGBM raw 0.537→0.753 (+0.22), XGBoost raw 0.714→0.769, RF raw 0.749→0.782 — while every tier champion stays within ±0.01 of its untuned best. Optuna independently chose moderate `scale_pos_weight` values (4–172, never 519) and a **single-layer** GraphSAGE, independently confirming our weight and over-smoothing findings. Best params: `reports/optuna_best_params.json`.
 
@@ -122,6 +163,8 @@ conclusion changes and the GAT comparison stands. Reproduce:
 
 ## References
 
+- **Sang, V. N. T., *Enhancing Credit Card Fraud Detection under Severe Class Imbalance using Cost-Sensitive Learning and Threshold Optimization*, EAI Endorsed Trans. ISMLA, Vol. 3, 2026** — the protocol-matched benchmark (ULB chronological 0.7902 / random 0.8815)
+- *Data Leakage and Deceptive Performance: A Critical Examination of Credit Card Fraud Detection Methodologies*, arXiv:2506.02703, 2025 — identifies four recurring flaws in ULB pipelines; this protocol was built against all four
 - Ahmed et al., *Ensemble ML with hybrid data sampling*, Machine Learning with Applications, 2025
 - Anand & Chakrabarty, *Credit Card Fraud Detection and Credit Risk Analysis*, SSRN, 2025
 - Singh et al., *Heterogeneous Graph Auto-Encoder for CreditCard Fraud Detection*, arXiv:2410.08121
