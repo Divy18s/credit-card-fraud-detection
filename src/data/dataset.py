@@ -38,6 +38,21 @@ def time_split(df: pd.DataFrame):
     return df.iloc[:train_end], df.iloc[train_end:val_end], df.iloc[val_end:]
 
 
+def sang_split(df: pd.DataFrame):
+    """Chronological 66/14/20 split matching Sang (2026, EAI ISMLA).
+
+    On the raw (non-deduplicated) time-sorted CSV these fractions reproduce that
+    paper's partition exactly: 187,972 / 39,873 / 56,962 rows with 368 / 49 / 75
+    frauds. Used only for the pre-registered replication check; the project's
+    primary protocol remains the 70/15/15 split above.
+    """
+    df = df.sort_values("Time").reset_index(drop=True)
+    n = len(df)
+    train_end = int(n * 0.66)
+    val_end = int(n * 0.80)
+    return df.iloc[:train_end], df.iloc[train_end:val_end], df.iloc[val_end:]
+
+
 def random_split(df: pd.DataFrame):
     """Stratified shuffled split - leakage-prone reference protocol used
     only for the ablation quantifying the random-vs-time gap."""
@@ -54,10 +69,19 @@ def random_split(df: pd.DataFrame):
 
 
 def get_splits(split: str = "time"):
-    """Return X_train, y_train, X_val, y_val, X_test, y_test, feature_names."""
+    """Return X_train, y_train, X_val, y_val, X_test, y_test, feature_names.
+
+    split: "time" (primary protocol, 70/15/15), "sang" (66/14/20 replication
+    check), or "random" (shuffled reference protocol for the leakage ablation).
+    """
     df = add_features(load_raw())
     feats = feature_columns(df)
-    tr, va, te = time_split(df) if split == "time" else random_split(df)
+    if split == "time":
+        tr, va, te = time_split(df)
+    elif split == "sang":
+        tr, va, te = sang_split(df)
+    else:
+        tr, va, te = random_split(df)
     y = config.TARGET_COL
     return (
         tr[feats], tr[y],

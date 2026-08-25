@@ -447,6 +447,59 @@ $48$-hour window as ``a short-horizon chronological validation rather than a ful
 analysis.'' Its SHAP ranking ($V14, V4, V10, V12, V8$) also overlaps ours in four of five
 positions.
 
+\subsection{Robustness: replicating on the published split}\label{sec:sangrep}
+The comparison in Section~\ref{sec:headtohead} confounds two things: the split fractions differ
+($70/15/15$ against $66/14/20$) and the model families differ (Random Forest against XGBoost).
+A replication check was registered in advance --- question, configurations and interpretation
+fixed in \code{reports/PREREGISTRATION\_sang\_split.md}, committed before the experiment was
+run, so the ordering is verifiable from the repository history rather than asserted. Sang's
+partition reproduces exactly from the public CSV: $66/14/20$ on time-sorted, non-deduplicated
+rows yields $187{,}972 / 39{,}873 / 56{,}962$ with $368 / 49 / 75$ frauds, matching the paper
+to the unit.
+
+\begin{table}[h]
+      \centering\small
+      \caption{Pre-registered replication on Sang's exact chronological partition. Standard
+      error at 75 test frauds is $\approx0.042$. Ledger:
+      \code{reports/results\_sang\_split.csv}.}
+      \label{tab:sangrep}
+      \begin{tabularx}{\textwidth}{Xllll}
+            \toprule
+            Configuration & $70/15/15$ & $66/14/20$ & $\Delta$ split & vs $0.7902$\\
+            \midrule
+            XGBoost + class weight & 0.7688 & 0.8055 & $+0.0367$ & $+0.0153$ ($0.37$ SE)\\
+            XGBoost + SMOTE-ENN & 0.7766 & 0.8102 & $+0.0336$ & $+0.0200$ ($0.48$ SE)\\
+            RF + SMOTE-ENN & 0.7947 & 0.8224 & $+0.0276$ & $+0.0322$ ($0.77$ SE)\\
+            \bottomrule
+      \end{tabularx}
+\end{table}
+
+\textbf{Outcome one: replication, not improvement.} XGBoost with validation-selected class
+weighting --- the closest analogue to Sang's cost-sensitive XGBoost, since neither uses
+synthetic resampling --- reaches $0.8055$ against the published $0.7902$. That is $0.37$
+standard errors. At the $F_1$-optimal threshold it recovers exactly the same 57 of 75 frauds
+that paper reports (identical FN${}=18$), with 5 false positives rather than 9. Under the
+pre-registered reading this is an independent replication; the margin is far too small to claim
+an improvement, and no such claim is made. \emph{The primary protocol of this report remains
+$70/15/15$, and the figures in Table~\ref{tab:sangrep} do not replace any headline result.}
+Promoting the more favourable of two splits would be exactly the selection effect quantified in
+Section~\ref{sec:litcmp}.
+
+\textbf{Outcome two, and the more consequential one: split fractions are a first-order
+choice.} Changing only the fractions --- same chronological protocol, same data, same models,
+same code --- shifted PR-AUC by $+0.033$ on average. The random-versus-chronological inflation
+measured in Section~\ref{sec:splittab} is $+0.035$. \emph{Choosing $20\%$ rather than $15\%$ as
+the test tail moves the number about as much as abandoning chronological evaluation
+altogether.} Part of the mechanism is visible in the windows: the $66/14/20$ test partition
+begins $1.7$ hours earlier and carries a higher fraud prevalence ($0.1317\%$ against
+$0.1217\%$), and average precision is bounded below by the positive rate. The remainder is that
+a $75$-fraud window and a $52$-fraud window are simply different samples of a non-stationary
+process.
+
+The implication is uncomfortable and worth stating plainly: this report's own headline of
+$0.795$ is conditioned on a $15\%$ tail, and a defensible alternative choice would have
+produced $0.822$. That is a further argument against reading any of these numbers as a ranking.
+
 \subsection{Leaderboard}
 Table~\ref{tab:leaderboard} lists the top configurations of all 72 time-split runs.
 The full ledger is \code{reports/results\_classical.csv}.
@@ -635,7 +688,9 @@ waterfall (\code{shap\_waterfall\_example.png}) powers the
 Nearly all published ULB results use a random or stratified split. The one exception we located
 is Sang~\cite{eai2026}, which reports a chronological ULB PR-AUC of $0.7902$ for an
 Optuna-tuned cost-sensitive XGBoost; our champion reaches $0.7947$ at roughly one-seventh the
-false-positive rate (Section~\ref{sec:headtohead}). Against every other published figure the
+false-positive rate (Section~\ref{sec:headtohead}). A pre-registered replication on that
+paper's exact partition (Section~\ref{sec:sangrep}) places our XGBoost $0.37$ standard errors
+from its published value. Against every other published figure the
 comparison must go through our shuffled arm, where our best configuration reaches $0.840$ and
 the tree models reach $0.810$--$0.812$, against $0.867$--$0.8815$ reported.
 
@@ -717,6 +772,15 @@ destroy. Second, the inflation we measure ($+0.016$ to $+0.060$) is obtained acr
 hours of separation; a deployment gap of weeks or months would be larger, not smaller. The figure
 should be read as a floor.
 
+\textbf{Sensitivity to the split fractions.} Section~\ref{sec:sangrep} shows that moving the
+chronological cut from $70/15/15$ to $66/14/20$ changes PR-AUC by $+0.033$ on average, a shift
+comparable to the random-versus-chronological effect this report is built to measure. The
+headline $0.795$ is therefore conditioned on one defensible choice among several, and a
+$20\%$ tail would have yielded $0.822$ for the same champion. No result here should be read as
+robust to that choice; the ranking-free conclusion of Section~\ref{sec:boot} is the appropriate
+one. A fuller treatment would sweep the cut point and report the resulting envelope, which is
+left to future work.
+
 \textbf{Other limitations.} Only 52 test frauds, so every confidence interval is wide
 ($0.20$--$0.24$) and no two models are separable; PCA anonymisation prevents true relational
 graphs and business rules; a single dataset from a single 2013 snapshot, with no cross-dataset
@@ -727,7 +791,8 @@ feature-similarity graph that is a proxy for, not an instance of, a real transac
 (IEEE-CIS spans months) to test whether the protocol gap widens as predicted; entity-aware graphs
 where cardholder and merchant nodes exist; online and drift-adaptive learning; cost-sensitive
 thresholds using real interception costs; probability calibration (Brier score, ECE); repeated
-shuffled splits across several seeds to put an interval on the inflation estimate itself; larger
+shuffled splits across several seeds, and a sweep of the chronological cut point, to put
+intervals on both the inflation estimate and the split-fraction sensitivity; larger
 trial budgets and nested resampling for tighter intervals.
 
 \section{Conclusion}
