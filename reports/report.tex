@@ -395,10 +395,14 @@ scrambles the temporal coherence its neighbourhoods relied upon.
 
 \subsection{Statistical uncertainty}
 Stratified-bootstrap intervals (Table~\ref{tab:boot}; Figure~\ref{fig:boot}) are wide ---
-widths of $0.20$--$0.24$ --- and \emph{every pairwise comparison overlaps}: at 52 test frauds
+widths of $0.20$--$0.25$ --- and \emph{every pairwise comparison overlaps}: at 52 test frauds
 no two models are statistically separable. Claims like ``tuned RF beats untuned RF''
-($0.7936$ vs $0.7947$) are correctly described as ties. This reframes the deliverable: the
-enduring value is the protocol and the ablation evidence, not rank order.
+($0.7936$ vs $0.7947$) are correctly described as ties. GraphSAGE additionally exhibits severe
+run-to-run instability: three invocations of the identical configuration (same seed, same
+40-epoch budget) spanned $0.631$--$0.756$, because full-batch training takes only 40 gradient
+steps in total and the early-stopping checkpoint is selected on a validation set containing 56
+frauds. This reframes the deliverable: the enduring value is the protocol and the ablation
+evidence, not rank order.
 
 \begin{table}[h]
       \centering\small
@@ -413,7 +417,7 @@ enduring value is the protocol and the ablation evidence, not rank order.
             CatBoost + GAN & 0.780 & [0.674, 0.880] & 0.206\\
             XGBoost + SMOTE-ENN & 0.777 & [0.670, 0.880] & 0.211\\
             LSTM + weight & 0.771 & [0.658, 0.871] & 0.213\\
-            GraphSAGE + weight & 0.651 & [0.526, 0.770] & 0.244\\
+            GraphSAGE + weight & 0.631 & [0.503, 0.750] & 0.247\\
             \bottomrule
       \end{tabular}
 \end{table}

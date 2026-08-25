@@ -297,9 +297,12 @@ Raw ledger: reports/results_classical.csv (72 runs)
       Health-checked headless (200 OK).
   [x] Bootstrap confidence intervals - DONE (src/models/bootstrap_ci.py):
       stratified resampling x1000 per tier representative. Every 95% CI spans
-      ~[0.66, 0.89] (width 0.20-0.24) and ALL pairwise comparisons are
+      ~[0.50, 0.89] (width 0.20-0.25) and ALL pairwise comparisons are
       statistical ties -> at 52 test frauds no model is separable; earlier
-      "+-0.02 noise" guess was conservative. See reports/bootstrap_ci.csv +
+      "+-0.02 noise" guess was conservative. GraphSAGE additionally shows
+      severe run-to-run instability: three identical-config invocations
+      spanned 0.631-0.756 (full-batch = 40 gradient steps total; checkpoint
+      picked on a 56-fraud validation set). See reports/bootstrap_ci.csv +
       reports/figures/bootstrap_ci.png.
   [x] Final report/notebook consolidation - DONE:
       notebooks/02_final_report.ipynb (executed end-to-end) - leaderboard,

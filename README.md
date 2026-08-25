@@ -38,9 +38,9 @@ XGBoost/CatBoost also run on GPU via `device="cuda"`; LightGBM stays on CPU.
 ## Uncertainty (bootstrap)
 
 Stratified resampling of the test set ×1,000 per model gives 95% CIs of width
-**~0.20–0.24 PR-AUC** for every tier representative — **all pairs overlap**
+**~0.20–0.25 PR-AUC** for every tier representative — **all pairs overlap**
 (statistical ties). At 52 test frauds, no model is separable from another;
-the honest conclusion is a shared ~0.65–0.89 band, not a ranking.
+the honest conclusion is a shared ~0.63–0.89 band, not a ranking.
 
 ## Demo App
 
@@ -66,7 +66,9 @@ Threshold tuned on validation set. Full table: `reports/results_classical.csv`.
 
 *Protocol footnotes:* sequence models (LSTM/BiLSTM) drop the first 7 test rows that lack an
 8-step window — fraud counts are unaffected (52/52). Neural/GNN tiers carry GPU
-nondeterminism (~±0.05 PR-AUC run-to-run for GraphSAGE); the bootstrap CIs below cover this.
+nondeterminism: three invocations of the *identical* GraphSAGE configuration spanned
+0.631–0.756 PR-AUC (full-batch training takes only 40 gradient steps, and early stopping
+picks its checkpoint on a 56-fraud validation set); tree tiers reproduce bit-exactly.
 
 | Rank | Model | Strategy | PR-AUC | F1 | MCC | FP | FN |
 |---|---|---|---|---|---|---|---|
