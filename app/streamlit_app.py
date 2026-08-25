@@ -85,7 +85,7 @@ def fraud_shap(model, x_row: pd.DataFrame):
         ev_arr = np.asarray(explainer.expected_value).ravel()
         ev = float(ev_arr[1]) if len(ev_arr) > 1 else float(ev_arr[0])
     expl = shap.Explanation(values=vals,
-                            base_values=np.full(x_row.shape[1], ev),
+                            base_values=float(ev),
                             data=x_row.values[0],
                             feature_names=list(x_row.columns))
     proba = float(model.predict_proba(x_row)[0, 1])
