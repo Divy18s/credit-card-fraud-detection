@@ -395,17 +395,23 @@ scrambles the temporal coherence its neighbourhoods relied upon.
 
 \subsection{Statistical uncertainty}
 Stratified-bootstrap intervals (Table~\ref{tab:boot}; Figure~\ref{fig:boot}) are wide ---
-widths of $0.20$--$0.25$ --- and \emph{every pairwise comparison overlaps}: at 52 test frauds
+widths of $0.20$--$0.24$ --- and \emph{every pairwise comparison overlaps}: at 52 test frauds
 no two models are statistically separable. Claims like ``tuned RF beats untuned RF''
 ($0.7936$ vs $0.7947$) are correctly described as ties. Run-to-run variance is family-dependent
 and small: the tree tiers reproduce bit-exactly, MLP and LSTM vary by $\approx 0.01$, and
-GraphSAGE by $\approx 0.02$ across four scaled-graph invocations ($0.724$--$0.756$). An earlier
+GraphSAGE by $\approx 0.02$ across three same-configuration invocations ($0.724$--$0.756$). An earlier
 draft of this section reported a $0.13$-wide ``GraphSAGE instability''; that was an artifact of
 a harness bug (its $k$-NN graphs were built on unscaled features, where \code{Amount} owns
 $99.9\%$ of the Euclidean distance budget and the informative $V$-features are effectively
 discarded) and has been retracted. A separate asymmetry is worth noting: full-batch SAGE takes
-at most 40 optimizer steps versus $\approx 5{,}850$ for mini-batched GAT, yet a 300-step SAGE
-probe converges to the same $0.756$ --- so the budget gap does not change any conclusion. This
+at most 40 optimizer steps versus $\approx 5{,}850$ for mini-batched GAT. Forcing SAGE to train
+the full 300 steps with early stopping disabled \emph{degrades} test PR-AUC to $0.707$, and
+the trajectory says why: validation AP keeps improving ($0.837$ at step 20 to $0.845$ at step
+250) while test AP falls ($0.756$ to $0.673$). The extra steps buy a tighter fit to the
+train/validation era --- chronologically adjacent windows --- at the cost of extrapolating to
+the later test window. That is temporal drift, not over-smoothing: depth is fixed at two layers
+throughout. So the budget gap does not flatter SAGE, and the GAT comparison stands: the
+better-trained model only ties. Probe: \texttt{python -m src.models.probe\_sage\_budget}. This
 reframes the deliverable: the enduring value is the protocol and the ablation evidence, not
 rank order.
 
@@ -418,10 +424,10 @@ rank order.
             Config & PR-AUC & 95\% CI & width\\
             \midrule
             RF + SMOTE-ENN & 0.795 & [0.692, 0.888] & 0.196\\
-            MLP raw & 0.782 & [0.677, 0.880] & 0.204\\
             CatBoost + GAN & 0.780 & [0.674, 0.880] & 0.206\\
-            XGBoost + SMOTE-ENN & 0.777 & [0.670, 0.880] & 0.211\\
-            LSTM + weight & 0.771 & [0.658, 0.871] & 0.213\\
+            LSTM + weight & 0.780 & [0.669, 0.879] & 0.210\\
+            MLP raw & 0.779 & [0.671, 0.877] & 0.206\\
+            XGBoost + SMOTE-ENN & 0.777 & [0.669, 0.880] & 0.211\\
             GraphSAGE + weight & 0.724 & [0.601, 0.837] & 0.236\\
             \bottomrule
       \end{tabular}

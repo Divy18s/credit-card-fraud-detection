@@ -38,7 +38,7 @@ XGBoost/CatBoost also run on GPU via `device="cuda"`; LightGBM stays on CPU.
 ## Uncertainty (bootstrap)
 
 Stratified resampling of the test set ×1,000 per model gives 95% CIs of width
-**~0.20–0.25 PR-AUC** for every tier representative — **all pairs overlap**
+**~0.20–0.24 PR-AUC** for every tier representative — **all pairs overlap**
 (statistical ties). At 52 test frauds, no model is separable from another;
 the honest conclusion is a shared ~0.72–0.89 band, not a ranking.
 
@@ -66,13 +66,18 @@ Threshold tuned on validation set. Full table: `reports/results_classical.csv`.
 
 *Protocol footnotes:* sequence models (LSTM/BiLSTM) drop the first 7 test rows that lack an
 8-step window — fraud counts are unaffected (52/52). Run-to-run variance is family-dependent
-and small: tree tiers reproduce bit-exactly; MLP/LSTM vary ~0.01; GraphSAGE ~0.02 across four
-scaled-graph invocations (0.724–0.756). *Erratum:* an earlier version of this footnote reported
+and small: tree tiers reproduce bit-exactly; MLP/LSTM vary ~0.01; GraphSAGE ~0.02 across three
+same-configuration invocations (0.724–0.756). *Erratum:* an earlier version of this footnote reported
 a 0.13-wide "GraphSAGE instability" — that was an artifact of one harness building its k-NN
 graphs on unscaled features (where `Amount` owns ~99.9% of the Euclidean distance budget,
 discarding the signal-bearing V-features); fixed and re-measured. Step-budget asymmetry:
-full-batch SAGE takes ≤40 optimizer steps vs ~5,850 for mini-batched GAT, but a 300-step SAGE
-probe converges to the same 0.756, so no conclusion changes.
+full-batch SAGE takes ≤40 optimizer steps vs ~5,850 for mini-batched GAT — but training SAGE
+the full 300 steps with early stopping disabled *lowers* test PR-AUC to 0.707. The trajectory
+shows why: validation AP keeps rising (0.837→0.845) while test AP falls (0.756→0.673) — the
+extra steps fit the chronologically-adjacent validation era and extrapolate worse to the later
+test window. That is temporal drift, not over-smoothing (depth is fixed at 2 layers). So no
+conclusion changes and the GAT comparison stands. Reproduce:
+`python -m src.models.probe_sage_budget`.
 
 | Rank | Model | Strategy | PR-AUC | F1 | MCC | FP | FN |
 |---|---|---|---|---|---|---|---|
