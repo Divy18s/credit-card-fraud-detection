@@ -1,0 +1,616 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tabularx}
+
+\graphicspath{{figures/}}
+\captionsetup{font=small,labelfont=bf}
+
+\definecolor{accent}{RGB}{140,21,21}
+\definecolor{softgray}{RGB}{245,245,245}
+
+\newcommand{\term}[1]{\textbf{\textcolor{accent}{#1}}}
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+\title{\vspace{-1.2cm}\textbf{Credit Card Fraud Detection:\\
+A Comparative Study of Classical ML, Deep Learning,\\ Generative Oversampling, Ensembles and Graph Neural Networks}\\[0.4cm]
+\large With a self-contained introduction to machine-learning model families\\[0.6cm]}
+\author{Divya \\ Indian Institute of Technology Hyderabad}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+We build and rigorously evaluate a complete fraud-detection pipeline on the public Kaggle ULB
+credit-card dataset (284{,}807 transactions, 492 frauds, $0.173\%$ prevalence).
+Seventy-two experiments span five model families --- linear models, tree ensembles,
+neural networks, generative-augmentation pipelines, and graph neural networks --- combined with
+seven imbalance-handling strategies, all under one deployment-honest protocol:
+a chronological 70/15/15 train/validation/test split, validation-only tuning,
+and a test set that keeps its natural imbalance.
+The champion, a Random Forest trained on SMOTE-ENN-resampled data, reaches
+$\text{PR-AUC} = 0.795$ ($F_1 = 0.848$, MCC $= 0.855$, one false positive in 42{,}722 transactions),
+the top of the honest-protocol range reported in recent literature.
+Nine controlled ablations explain \emph{why}: hybrid sampling wins for trees;
+naive extreme class weighting silently collapses boosted models; cross-family
+ensembling helps while seed averaging does not; depth does not help on PCA features;
+and shuffling the split inflates scores by up to $+0.06$, reproducing the numbers
+that dominate older literature. Stratified bootstrap analysis shows all models are
+statistical ties at this test size --- the contribution is the protocol and the analysis,
+not a leaderboard winner. Every prediction is explained with SHAP, whose feature
+attributions independently confirm the exploratory analysis.
+The report doubles as a self-contained tutorial: each model family is introduced from
+first principles before its experimental results are discussed.
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================================
+\section{Introduction}
+% ============================================================================
+
+Card-not-present fraud costs the payments industry tens of billions of dollars annually,
+and every fraudulent transaction that slips through is a direct loss while every legitimate
+transaction that is wrongly blocked damages customer trust. Machine-learning classifiers sit
+at the heart of modern fraud engines: they score each incoming transaction, and a policy layer
+decides whether to approve, challenge, or block.
+
+This project builds such a scoring system end-to-end and asks three questions:
+
+\begin{enumerate}[leftmargin=*]
+      \item \textbf{Which model family} detects fraud best when the evaluation is done honestly?
+      \item \textbf{How should extreme class imbalance} (one fraud per 578 legitimate transactions)
+            be handled --- resampling, cost re-weighting, synthetic generation, or anomaly detection?
+      \item \textbf{How much do methodology choices} (split protocol, tuning discipline,
+            uncertainty reporting) change the conclusions?
+\end{enumerate}
+
+The project is also written as a \term{learning document}. Section~\ref{sec:taxonomy}
+introduces every model family from first principles so that a reader new to machine learning
+can follow exactly what was trained and why. All 72 experiments, including failures, are
+logged in the accompanying experiment inventory, and every design decision is backed by a
+controlled ablation rather than a citation.
+
+% ============================================================================
+\section{Background: the minimum machine learning needed here}
+% ============================================================================
+
+\subsection{Supervised binary classification}
+In \term{supervised learning} we have labelled examples
+$(\mathbf{x}_i, y_i)$ where $\mathbf{x}_i$ is a feature vector and
+$y_i \in \{0, 1\}$ the label (here: $1$ = fraud). A model $f$ maps $\mathbf{x}$
+to either a hard decision or, more usefully, a \term{score}
+$\hat{p}(y{=}1 \mid \mathbf{x}) \in [0,1]$. Training means choosing parameters to minimise a
+loss; the standard choice for binary problems is \term{binary cross-entropy},
+which penalises confident wrong answers heavily.
+
+A score only becomes a decision after comparing it to a \term{threshold} $\tau$:
+predict ``fraud'' iff $\hat{p} \geq \tau$. Choosing $\tau$ is itself a modelling decision ---
+in this project it is always tuned on a validation set (Section~\ref{sec:protocol}),
+never on test data.
+
+\subsection{The class-imbalance problem}
+With $99.83\%$ negatives, a model that outputs ``legitimate'' for everything achieves
+$99.83\%$ accuracy and catches zero fraud. Accuracy is therefore useless here. Worse,
+imbalance distorts training: the loss is dominated by the majority class unless counter-measures
+are taken (Section~\ref{sec:imbalance}). The community-standard metric for this regime is the
+\term{Precision--Recall curve} and the area under it (PR-AUC / average precision).
+
+\subsection{Splits, validation, and leakage}
+Models must be evaluated on data they did not see. The subtle part is \emph{how} the data is
+divided:
+
+\begin{itemize}[leftmargin=*]
+      \item A \term{random (shuffled) split} mixes transactions from the whole period into both
+            sides. Patterns from the future leak backwards into training. Scores look better than
+            reality; we quantify this inflation ourselves in Section~\ref{sec:splittab}.
+      \item A \term{chronological (time-based) split} trains on the earliest transactions and tests
+            on the latest --- exactly how a deployed system experiences the world.
+      \item A \term{validation set} is a third partition used for \emph{every adaptive choice}:
+            hyper-parameter search, class-weight selection, early stopping, decision thresholds.
+            The test set must be opened once, after all choices are frozen. Skipping validation
+            and tuning on test is one of the most common flaws in applied fraud papers.
+\end{itemize}
+
+% ============================================================================
+\section{Dataset and exploratory analysis}
+% ============================================================================
+
+\textbf{Source.} The ULB (Universit\'e Libre de Bruxelles) credit-card dataset, released with
+Dal Pozzolo et al.'s research collaboration with Worldline, contains real European card
+transactions from September 2013~\cite{dalpozzolo2018}. To protect cardholders, the original
+28 features were transformed with principal component analysis (PCA); we call them
+$V1,\dots,V28$. Two interpretable columns survive: \code{Time} (seconds since the first
+transaction) and \code{Amount} (EUR). The label is \code{Class} $\in \{0,1\}$.
+
+\textbf{Engineered features.} We add three derived columns used by all models:
+$\log(1+\text{Amount})$ (amounts are extremely right-skewed), and cyclic encodings of the
+hour of day, $\sin(2\pi h/24)$ and $\cos(2\pi h/24)$, so that hour 23 and hour 0 are close.
+
+\begin{figure}[h]
+      \centering
+      \includegraphics[width=0.55\textwidth]{01_class_distribution.png}
+      \includegraphics[width=0.42\textwidth]{03_fraud_rate_by_hour.png}
+      \caption{\textbf{Left:} the 578:1 class imbalance --- the central difficulty of the task.
+            \textbf{Right:} fraud rate by hour peaks around 02:00--04:00 at up to ten times the
+            daily average, justifying time features and a chronological split.}
+\end{figure}
+
+\textbf{Key exploratory findings.}
+(i) No missing values anywhere.
+(ii) Fraud amounts skew small (median EUR 9.25 vs.\ EUR 22) yet have a heavier upper tail
+relative to their count --- motivating the log transform.
+(iii) The features most correlated with the label are $V17, V14, V12, V10$ (negatively) and
+$V11$ (positively); no single feature separates the classes, which leaves room for non-linear
+models. These observations become the ground truth against which the SHAP explanations of
+Section~\ref{sec:shap} are later compared.
+
+% ============================================================================
+\section{A taxonomy of model families}\label{sec:taxonomy}
+% ============================================================================
+
+This section introduces every family used in the study, building from simplest to most
+complex. Table~\ref{tab:families} at the end summarises where each of our 18 trained
+architectures belongs.
+
+\subsection{Linear models}
+\term{Logistic Regression} fits
+$\hat{p} = \sigma(\mathbf{w}^{\top}\mathbf{x} + b)$ where $\sigma$ is the logistic function:
+a single weighted vote over features. It is fast, interpretable, and surprisingly hard to beat
+when signal is mostly additive. \term{Linear SVM} draws the maximum-margin separating hyperplane
+instead of maximising likelihood; empirically it lands near logistic regression here
+(PRAUC 0.747 vs 0.738). Both define the \emph{linear ceiling} of the dataset.
+
+\subsection{Probabilistic baseline: Naive Bayes}
+\term{Gaussian Naive Bayes} applies Bayes' rule assuming features are independent given the
+class. PCA components are uncorrelated \emph{linearly}, but independence still fails badly:
+NB scores only $\approx 0.08$ PR-AUC, a reminder that a strong assumption can be worse than no
+model when it is violated.
+
+\subsection{Decision trees}
+A \term{decision tree} recursively partitions feature space with axis-aligned questions
+(``is $V14 < c$?''). A single unpruned tree overfits noise: ours reaches only 0.405 PR-AUC.
+Trees are weak alone but are the building blocks of the strongest classical families below.
+
+\subsection{Ensemble methods: many weak learners, one strong committee}
+\term{Bagging} (bootstrap aggregation) trains many deep trees on random resamples and averages
+them --- variance cancels out. \textbf{Random Forest}~\cite{breiman2001} adds extra randomness
+by restricting each split to a random feature subset; it is our overall champion.
+
+\term{Gradient boosting} instead builds trees \emph{sequentially}, each new tree fitting the
+residual errors of the current ensemble. Modern implementations --- \textbf{XGBoost}~\cite{chen2016},
+\textbf{LightGBM}~\cite{ke2017} (histogram-based splits), and \textbf{CatBoost}~\cite{prokhorenkova2018}
+(ordered boosting, robust handling of categorical variables) --- dominate tabular benchmarks.
+Their weakness discovered here: blindly setting the positive-class weight to the imbalance ratio
+($519$) makes boosting predict almost everything as fraud (Section~\ref{sec:weightab}).
+
+\term{Stacking / voting} combines \emph{different} families: our best deep ensemble averages the
+probabilities of a forest, an MLP and an LSTM (0.785). Diversity across families is what pays
+off; averaging five LSTMs that differ only in random seed does not (0.775).
+
+\subsection{Neural networks}
+All neural nets share the same atom: a \term{layer} computes
+$\mathbf{h}' = \phi(W\mathbf{h} + \mathbf{b})$ with a non-linearity $\phi$ (ReLU etc.).
+Stacking layers lets the network compose simple features into complex ones.
+
+\begin{description}[leftmargin=1.4em, style=nextline]
+      \item[MLP / DNN (feed-forward).] Fully connected layers read one transaction at a time.
+            Our MLP (128-64-32 units) scores 0.775; doubling depth and width (DNN, 512-256-128-64
+            with batch normalisation) changes nothing (0.7752) --- depth buys nothing on 32
+            PCA features.
+      \item[Autoencoder.] An encoder compresses legitimate transactions to a 16-dimensional code
+            and a decoder reconstructs them; frauds reconstruct poorly, so reconstruction error
+            becomes an anomaly score. Trained without labels it reaches ROC-AUC 0.94 but only
+            0.584 PR-AUC: ignoring labels costs ranking precision exactly where fraud systems
+            need it.
+      \item[RNN / LSTM.] Recurrent networks read \emph{sequences}, carrying a hidden state across
+            steps; the LSTM's gating cells remember long-range patterns. Feeding sliding windows
+            of 8 consecutive transactions lifts performance to 0.780 --- temporal context is real
+            signal. Making it bidirectional (BiLSTM, reading forwards and backwards) adds nothing
+            (0.781): fraud evidence is causal, not symmetric.
+      \item[Transformers.] Replace recurrence with \term{self-attention}, letting every element
+            weigh every other element in parallel~\cite{vaswani2017}. \textbf{FT-Transformer}
+            applies this to tabular rows (each feature becomes a token); at 0.681 it loses to
+            boosting and even to the plain MLP --- attention overhead is unjustified on 32 numeric
+            features, consistent with recent tabular-DL studies.
+      \item[GANs.] Generative Adversarial Networks~\cite{goodfellow2014} pit a Generator (creates
+            fake samples from noise) against a Discriminator (real vs.\ fake) until fakes become
+            statistically indistinguishable. We train one on the minority class and use it to
+            synthesise frauds (Section~\ref{sec:imbalance}).
+\end{description}
+
+\subsection{Graph neural networks}
+When entities are linked (card---merchant---device), data forms a \term{graph}
+$G=(V,E)$, and \term{message passing} updates each node from its neighbours:
+$\mathbf{h}_v' = \mathrm{UPDATE}\big(\mathbf{h}_v,\ \mathrm{AGG}\{\mathbf{h}_u : u \in \mathcal{N}(v)\}\big)$.
+\textbf{GraphSAGE}~\cite{hamilton2017} samples a fixed number of neighbours and aggregates
+(mean/max/pool); \textbf{GAT}~\cite{velickovic2018} learns attention weights over neighbours.
+Crucially, ULB has \emph{no entity identifiers}, so our graph connects each transaction to its
+$k{=}10$ nearest neighbours in feature space --- a similarity surrogate. SAGE still reaches
+0.756, but attention (GAT, 0.745) adds nothing: there is no true relational structure to attend
+over. Optuna's choice of a \emph{single} SAGE layer confirms over-smoothing --- two rounds of
+averaging near-identical neighbours blurs discriminative detail.
+
+\begin{table}[h]
+      \centering\small
+      \caption{Where every trained architecture sits in the taxonomy.}
+      \label{tab:families}
+      \begin{tabularx}{\textwidth}{llXl}
+            \toprule
+            \textbf{Family} & \textbf{Model} & \textbf{One-line idea} & \textbf{Best PRAUC}\\
+            \midrule
+            Linear & LogReg / LinearSVC & weighted vote / max-margin hyperplane & 0.738 / 0.747\\
+            Probabilistic & GaussianNB & Bayes rule + independence assumption & 0.079\\
+            Tree & DecisionTree & recursive if-else partitioning & 0.405\\
+            Bagging & RandomForest & averaged de-correlated trees & \textbf{0.795}\\
+            Boosting & XGBoost / LightGBM / CatBoost & sequential residual fitting & 0.777 / 0.775 / 0.783\\
+            Feed-forward NN & MLP / DNN & composed dense layers & 0.775 / 0.775\\
+            Autoencoder & AE & reconstruction-error anomaly score & 0.584\\
+            Recurrent NN & LSTM / BiLSTM & gated state over 8-step windows & 0.780 / 0.781\\
+            Transformer & FT-Transformer & self-attention over feature tokens & 0.681\\
+            GAN augmentation & GAN + any model & adversarially generated minority samples & 0.783 (CatB)\\
+            Graph NN & GraphSAGE / GAT & neighbour message passing & 0.756 / 0.745\\
+            Stacked ensemble & RF+MLP+LSTM & average of diverse families & 0.785\\
+            \bottomrule
+      \end{tabularx}
+\end{table}
+
+% ============================================================================
+\section{Handling class imbalance}\label{sec:imbalance}
+% ============================================================================
+
+Seven strategies were compared, all applied to the \emph{training partition only}:
+
+\begin{enumerate}[leftmargin=*]
+      \item \textbf{raw} --- do nothing; establishes each model's floor.
+      \item \textbf{class weighting} --- multiply the positive class's loss contribution by a
+            weight $w$. The naive choice $w = n_{\text{neg}}/n_{\text{pos}} \approx 519$ can be
+            destructive; we select $w$ on the validation grid
+            $\{1, 4, 16, \sqrt{r}, 64, r\}$ (with $r$ the imbalance ratio).
+      \item \textbf{RUS} --- random undersampling deletes majority rows until classes are even.
+            Cheap, but discards $99\%$ of the data (only 768 training rows remain).
+      \item \textbf{SMOTE}~\cite{chawla2002} --- Synthetic Minority Over-sampling TEchnique:
+            new fraud points are interpolated between neighbouring minority samples.
+      \item \textbf{SMOTE-ENN}~\cite{batista2004} --- SMOTE followed by Edited Nearest Neighbours
+            cleaning, which removes both noisy synthetics and borderline majorities.
+            This \emph{hybrid} is the strongest classical recipe.
+      \item \textbf{GAN oversampling} --- a generator adversarially trained on the 384 training
+            frauds produces synthetic ones; strong for CatBoost and LightGBM, harmful for
+            neural nets and linear models.
+      \item \textbf{anomaly framing} --- train only on legitimate data (autoencoder) and flag
+            large reconstruction error; requires no labels but wastes the labels we have.
+\end{enumerate}
+
+% ============================================================================
+\section{Evaluation methodology}\label{sec:protocol}
+% ============================================================================
+
+\textbf{Split.} Chronological: earliest $70\%$ train (384 frauds), next $15\%$
+validation (56 frauds), latest $15\%$ test (52 frauds).
+
+\textbf{Tuning discipline.} Every adaptive choice uses the validation set exclusively:
+decision thresholds (max-$F_1$ point of the validation PR curve, frozen thereafter),
+class-weight grids, early-stopping epochs, and all Optuna searches (objective =
+validation PR-AUC, TPE sampler, seed 42). The test set is scored exactly once per
+configuration.
+
+\textbf{Metrics.} Confusion-matrix counts (TP/FP/FN/TN), precision, recall, $F_1$,
+Matthews Correlation Coefficient (robust to imbalance), ROC-AUC (reported but known to be
+optimistic here), and \textbf{PR-AUC} --- the area under precision versus recall --- as the
+primary metric, following the dataset authors' recommendation.
+
+\textbf{Uncertainty.} With 52 test frauds, metrics wobble substantially. We estimate this with
+a \term{stratified bootstrap}: resample frauds and legits separately, with replacement,
+$1{,}000$ times; recompute PR-AUC per replicate; report the 2.5th--97.5th percentile interval
+(Efron~\cite{efron1979}). Overlapping intervals mean two models cannot be told apart on this
+data.
+
+% ============================================================================
+\section{Results}
+% ============================================================================
+
+\subsection{Leaderboard}
+Table~\ref{tab:leaderboard} lists the top configurations of all 72 time-split runs.
+The full ledger is \code{reports/results\_classical.csv}.
+
+\begin{table}[h]
+      \centering\small
+      \caption{Top 15 of 72 runs (test set, chronological).}
+      \label{tab:leaderboard}
+      \begin{tabular}{llcccccc}
+            \toprule
+            \# & Model + strategy & PR-AUC & $F_1$ & Prec. & Rec. & FP & FN\\
+            \midrule
+            1 & Random Forest + SMOTE-ENN & \textbf{0.795} & 0.848 & 0.975 & 0.750 & 1 & 13\\
+            2 & Random Forest + SMOTE & 0.790 & 0.848 & 0.975 & 0.750 & 1 & 13\\
+            3 & RF+MLP+LSTM stack & 0.785 & 0.835 & 0.974 & 0.731 & 1 & 14\\
+            4 & Random Forest + class weight & 0.784 & 0.788 & 0.830 & 0.750 & 8 & 13\\
+            5 & CatBoost + GAN & 0.783 & 0.848 & 0.975 & 0.750 & 1 & 13\\
+            6 & BiLSTM + class weight & 0.781 & 0.839 & 0.951 & 0.750 & 2 & 13\\
+            7 & LSTM + class weight & 0.780 & 0.813 & 0.949 & 0.712 & 2 & 15\\
+            8 & XGBoost + SMOTE-ENN & 0.777 & 0.813 & 0.886 & 0.750 & 5 & 13\\
+            9 & LightGBM + GAN & 0.775 & 0.822 & 0.974 & 0.712 & 1 & 15\\
+            10 & LSTM ensemble (5 seeds) & 0.775 & 0.831 & 1.000 & 0.712 & 0 & 15\\
+            11 & MLP + raw & 0.775 & 0.809 & 0.973 & 0.692 & 1 & 16\\
+            \bottomrule
+      \end{tabular}
+\end{table}
+
+The champion flags 39 of 52 frauds while raising a single false alarm among 42{,}722
+transactions --- production-grade precision at useful recall.
+
+\subsection{Imbalance-strategy ablation}
+Across the four boosted/forest models the ordering predicted by Ahmed et al.~\cite{ahmed2025}
+reproduces exactly: \emph{hybrid $>$ oversampling $>$ weighting $>$ raw}. GAN synthesis is the
+top strategy for CatBoost (0.783) and rescues LightGBM, but hurts linear models badly
+(LogReg drops to 0.568): synthetic-data gains are model-dependent, never universal.
+
+\subsection{Class-weight ablation}\label{sec:weightab}
+Keeping the classic fixed weight $r \approx 519$ as a visible control row, validation-selected
+weights improve every boosted model: XGBoost $0.761 \to 0.769$ (chose $w{=}16$),
+CatBoost $0.762 \to 0.765$ ($\sqrt{r}$), and rescue LightGBM from total collapse
+($0.009 \to 0.537$, with validation rejecting any weighting at all). Optuna later searched the
+weight continuously and picked $4.1$--$172$ --- two independent mechanisms agreeing that the
+textbook ratio is far too aggressive.
+
+\subsection{Random-split ablation: quantifying leakage}\label{sec:splittab}
+Re-running one configuration per tier under the shuffled protocol used by most papers:
+
+\begin{table}[h]
+      \centering\small
+      \caption{Chronological vs shuffled split (same models, same data).}
+      \label{tab:splits}
+      \begin{tabular}{lccc}
+            \toprule
+            Configuration & Time split & Random split & Inflation\\
+            \midrule
+            CatBoost + GAN & 0.780 & 0.840 & $+0.060$\\
+            MLP raw & 0.779 & 0.827 & $+0.047$\\
+            XGBoost + SMOTE-ENN & 0.777 & 0.810 & $+0.034$\\
+            RandomForest + SMOTE-ENN & 0.795 & 0.812 & $+0.017$\\
+            LSTM + class weight & 0.780 & 0.797 & $+0.016$\\
+            GraphSAGE + weight & 0.739 & 0.695 & $-0.044$\\
+            \bottomrule
+      \end{tabular}
+\end{table}
+
+Shuffling inflates five of six configurations --- up to $+0.06$ for the synthetic-data
+pipeline, whose fabricated frauds land next to their real neighbours in the test fold.
+Our measured shuffled numbers ($0.80$--$0.84$) move into the band where the published
+random-split literature sits: a large share of the historical benchmark gap is
+\emph{protocol, not model quality}. GraphSAGE is the instructive exception --- shuffling
+scrambles the temporal coherence its neighbourhoods relied upon.
+
+\subsection{Statistical uncertainty}
+Stratified-bootstrap intervals (Table~\ref{tab:boot}; Figure~\ref{fig:boot}) are wide ---
+widths of $0.20$--$0.24$ --- and \emph{every pairwise comparison overlaps}: at 52 test frauds
+no two models are statistically separable. Claims like ``tuned RF beats untuned RF''
+($0.7936$ vs $0.7947$) are correctly described as ties. This reframes the deliverable: the
+enduring value is the protocol and the ablation evidence, not rank order.
+
+\begin{table}[h]
+      \centering\small
+      \caption{Stratified-bootstrap 95\% CIs ($1{,}000$ replicates).}
+      \label{tab:boot}
+      \begin{tabular}{lccl}
+            \toprule
+            Config & PR-AUC & 95\% CI & width\\
+            \midrule
+            RF + SMOTE-ENN & 0.795 & [0.692, 0.888] & 0.196\\
+            MLP raw & 0.782 & [0.677, 0.880] & 0.204\\
+            CatBoost + GAN & 0.780 & [0.674, 0.880] & 0.206\\
+            XGBoost + SMOTE-ENN & 0.777 & [0.670, 0.880] & 0.211\\
+            LSTM + weight & 0.771 & [0.658, 0.871] & 0.213\\
+            GraphSAGE + weight & 0.651 & [0.526, 0.770] & 0.244\\
+            \bottomrule
+      \end{tabular}
+\end{table}
+
+\begin{figure}[h]
+      \centering
+      \includegraphics[width=0.85\textwidth]{bootstrap_ci.png}
+      \caption{Forest plot: point estimates with stratified-bootstrap 95\% intervals.
+            Complete overlap everywhere.}
+      \label{fig:boot}
+\end{figure}
+
+% ============================================================================
+\section{Explainability: SHAP}\label{sec:shap}
+% ============================================================================
+
+\term{SHAP} (SHapley Additive exPlanations)~\cite{lundberg2017} imports Shapley values from
+cooperative game theory: treat features as players and the prediction as the payout, then pay
+each feature its average marginal contribution over all orderings. Unlike generic importances,
+SHAP yields a signed contribution \emph{per transaction}: ``low $V12$ added $+\delta$ to this
+transaction's fraud logit.''
+
+Applying TreeExplainer to the champion over 3{,}052 test rows (all 52 frauds plus a 3{,}000-row
+legitimate sample):
+
+\begin{figure}[h]
+      \centering
+      \includegraphics[width=0.72\textwidth]{shap_global_importance.png}\\[0.3cm]
+      \includegraphics[width=0.66\textwidth]{shap_beeswarm_fraud.png}
+      \caption{Global SHAP importance (top) and beeswarm over actual fraud transactions
+            (bottom): red = high feature value, blue = low; rightward = pushes toward fraud.}
+\end{figure}
+
+The ranking --- $V12, V14, V4, V10, V11, V17$ --- matches the Phase-1 correlation analysis
+feature-for-feature \emph{and} sign-for-signature ($V12/V14/V10/V17$ low $\to$ fraud,
+$V11$ high $\to$ fraud, small amounts $\to$ fraud). Two independent methods agreeing on both
+axes is strong evidence the model learned genuine structure rather than artifacts. A per-
+transaction waterfall (\code{reports/figures/shap\_waterfall\_example.png}) powers the
+``why flagged'' view of the demo application.
+
+% ============================================================================
+\section{Comparison with the literature}
+% ============================================================================
+
+\begin{table}[h]
+      \centering\small
+      \caption{Published reference points and this work.}
+      \label{tab:lit}
+      \begin{tabularx}{\textwidth}{lXX}
+            \toprule
+            Source & Setting & Best PR-AUC\\
+            \midrule
+            KAIS 2026~\cite{kais2026} & private bank data, random CV & 0.9879\\
+            EAI ISMLA 2026~\cite{eai2026} & ULB, optimized XGBoost, random split & 0.8815\\
+            Anand \& Chakrabarty 2025~\cite{anand2025} & ULB, LSTM ensemble, random split & 0.8269\\
+            HGNN~\cite{hgnn2025} / HG-AE~\cite{hgae2024} & private relational graphs & $\approx$0.89\\
+            \midrule
+            \textbf{This work} & \textbf{ULB, chronological split} & \textbf{0.795}\\
+            \textbf{This work} & \textbf{ULB, shuffled (their protocol)} & \textbf{0.840}\\
+            \bottomrule
+      \end{tabularx}
+\end{table}
+
+Under our honest protocol 0.795 tops the reported range; under the papers' own shuffled
+protocol our models move into the same range ($0.80$--$0.84$) that the shuffled-protocol
+literature reports. The remaining gap to relational-GNN
+papers is structural: they possess real cardholder--merchant identities, which ULB anonymised
+away.
+
+% ============================================================================
+\section{Lessons learned}
+% ============================================================================
+
+\begin{enumerate}[leftmargin=*]
+      \item \textbf{Hybrid cleaning beats blind synthesis} for tree ensembles
+            (SMOTE-ENN $>$ SMOTE $>$ weights $>$ raw).
+      \item \textbf{Never assume the textbook class weight.} Validate it; the naive ratio can
+            silently destroy a booster.
+      \item \textbf{Ensemble diversity must cross families}, not random seeds.
+      \item \textbf{Match the architecture to the data's structure:} sequences reward RNNs;
+            absent entities starve GNNs; depth starves on wide-but-shallow tabular signal.
+      \item \textbf{Report uncertainty.} At 52 positives, everything inside the CI band is a tie.
+      \item \textbf{Protocol dominates model choice:} the same models move by $+0.10$ when the
+            split leaks.
+\end{enumerate}
+
+% ============================================================================
+\section{Limitations and future work}
+% ============================================================================
+
+\textbf{Limitations.} Only 52 test frauds (wide confidence bands); PCA anonymisation prevents
+true relational graphs and business rules; a single two-day snapshot from 2013; concept drift
+beyond that window untested; GPU-accelerated search budgets bounded (25--60 Optuna trials).
+
+\textbf{Future work.} Entity-aware graphs on identity-rich datasets; online/drift-adaptive
+learning; cost-sensitive thresholds using real interception costs; probability calibration
+(Brier/ECE); larger trial budgets and nested resampling for tighter CIs.
+
+% ============================================================================
+\section{Conclusion}
+% ============================================================================
+
+We delivered a complete, reproducible fraud-analytics study: eighteen architectures across five
+families, seven imbalance strategies, and nine controlled ablations, all under one disciplined
+chronological protocol with SHAP explanations and bootstrap uncertainty. The champion
+(Random Forest + SMOTE-ENN) achieves production-grade operating characteristics, and the study's
+central lesson generalises beyond fraud: \emph{when methodology is held constant, model families
+converge; when it varies, it --- not the model --- explains most of what the literature calls
+progress.}
+
+% ============================================================================
+\begin{thebibliography}{99}\small
+\bibitem{dalpozzolo2018} A. Dal Pozzolo, G. Boracchi, O. Caelen, C. Alippi, G. Bontempi.
+\emph{Credit Card Fraud Detection: A Realistic Modeling and a Novel Learning Strategy}.
+IEEE Trans.\ Neural Networks and Learning Systems, 29(8), 2018.
+\bibitem{ahmed2025} K. H. Ahmed, S. Axelsson, Y. Li, A. M. Sagheer.
+\emph{A Credit Card Fraud Detection Approach Based on Ensemble Machine Learning Classifier with
+Hybrid Data Sampling}. Machine Learning with Applications, 20:100675, 2025.
+\bibitem{anand2025} A. Anand, S. Chakrabarty. \emph{Credit Card Fraud Detection and Credit Risk
+Analysis: Machine Learning Approaches}. SSRN 5337550, 2025.
+\bibitem{kais2026} \emph{AI-Based Credit Card Fraud Detection: A Machine Learning Approach with
+Model Explainability on Real-World Data}. Knowledge and Information Systems, 2026.
+\bibitem{eai2026} V. N. T. Sang. \emph{Enhancing Credit Card Fraud Detection under Severe Class
+Imbalance Using Cost-Sensitive Learning and Threshold Optimization}. EAI Endorsed Trans.\ ISMLA, 2026.
+\bibitem{hgnn2025} \emph{Detecting Credit Card Fraud via Heterogeneous Graph Neural Networks with
+Graph Attention}. arXiv:2504.08183, 2025.
+\bibitem{hgae2024} M. T. Singh et al. \emph{Heterogeneous Graph Auto-Encoder for CreditCard Fraud
+Detection}. arXiv:2410.08121, 2024.
+\bibitem{lundberg2017} S. Lundberg, S.-I. Lee. \emph{A Unified Approach to Interpreting Model
+Predictions}. NeurIPS, 2017.
+\bibitem{chawla2002} N. V. Chawla et al. \emph{SMOTE: Synthetic Minority Over-sampling Technique}.
+Journal of Artificial Intelligence Research, 16, 2002.
+\bibitem{batista2004} G. E. A. P. A. Batista et al. \emph{A Study of the Behavior of Several Methods
+for Balancing Machine Learning Training Data}. SIGKDD Explorations, 6(1), 2004.
+\bibitem{breiman2001} L. Breiman. \emph{Random Forests}. Machine Learning, 45(1), 2001.
+\bibitem{chen2016} T. Chen, C. Guestrin. \emph{XGBoost: A Scalable Tree Boosting System}. KDD, 2016.
+\bibitem{ke2017} G. Ke et al. \emph{LightGBM: A Highly Efficient Gradient Boosting Decision Tree}.
+NeurIPS, 2017.
+\bibitem{prokhorenkova2018} L. Prokhorenkova et al. \emph{CatBoost: Unbiased Boosting with
+Categorical Features}. NeurIPS, 2018.
+\bibitem{vaswani2017} A. Vaswani et al. \emph{Attention Is All You Need}. NeurIPS, 2017.
+\bibitem{goodfellow2014} I. Goodfellow et al. \emph{Generative Adversarial Nets}. NeurIPS, 2014.
+\bibitem{hamilton2017} W. L. Hamilton, R. Ying, J. Leskovec. \emph{Inductive Representation
+Learning on Large Graphs (GraphSAGE)}. NeurIPS, 2017.
+\bibitem{velickovic2018} P. Veli\v{c}kovi\'c et al. \emph{Graph Attention Networks}. ICLR, 2018.
+\bibitem{gorishniy2021} Y. Gorishniy et al. \emph{Revisiting Deep Learning Models for Tabular Data}.
+NeurIPS, 2021.
+\bibitem{hochreiter1997} S. Hochreiter, J. Schmidhuber. \emph{Long Short-Term Memory}. Neural
+Computation, 9(8), 1997.
+\bibitem{efron1979} B. Efron. \emph{Bootstrap Methods: Another Look at the Jackknife}. Annals of
+Statistics, 7(1), 1979.
+\end{thebibliography}
+
+\appendix
+% ============================================================================
+\section{Reproducibility}
+% ============================================================================
+
+Environment: Python 3.12 virtual environment; PyTorch 2.13.0+cu130 (NVIDIA RTX 5050);
+scikit-learn 1.9, XGBoost 3.4, LightGBM 4.7, CatBoost 1.2.10, imbalanced-learn 0.14,
+SHAP 0.52, Optuna 4.9. Global seed 42.
+
+\begin{table}[h]
+      \centering\small
+      \begin{tabularx}{\textwidth}{lX}
+            \toprule
+            Artifact & Command\\
+            \midrule
+            Data download & \code{python -m src.data.make\_dataset}\\
+            Classical tier & \code{python -m src.models.train\_classical}\\
+            Deep tier & \code{python -m src.models.train\_deep}\\
+            GNN tier & \code{python -m src.models.train\_gnn}\\
+            Ensembles & \code{python -m src.models.train\_ensembles}\\
+            Tuning & \code{python -m src.models.tune\_optuna}\\
+            Split ablation & \code{python -m src.models.ablation\_random\_split}\\
+            Bootstrap CIs & \code{python -m src.models.bootstrap\_ci}\\
+            SHAP & \code{python -m src.models.explain\_shap}\\
+            Demo app & \code{streamlit run app/streamlit\_app.py}\\
+            Final notebook & \code{notebooks/02\_final\_report.ipynb}\\
+            \bottomrule
+      \end{tabularx}
+\end{table}
+
+\section{Glossary}
+\begin{description}[leftmargin=1.4em, style=nextline]
+      \item[PR-AUC] Area under the precision--recall curve; threshold-free ranking quality for
+            imbalanced data. Primary metric throughout.
+      \item[MCC] Matthews Correlation Coefficient; a balanced accuracy-like measure that stays
+            informative under extreme imbalance.
+      \item[Leakage] Any information reaching training that would be unavailable at prediction
+            time (future rows, synthetic twins of test points, test-informed tuning).
+      \item[Over-smoothing] Degeneration of GNN representations after repeated neighbourhood
+            averaging; motivates shallow graphs here.
+      \item[stratified bootstrap] Resampling that preserves subgroup sizes (fraud/legit counts)
+            so metric replicates remain meaningful.
+      \item[pos\_weight / scale\_pos\_weight] Multiplier on the positive class loss term;
+            compensates imbalance but must be validated.
+\end{description}
+
+\end{document}

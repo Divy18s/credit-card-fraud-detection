@@ -1,0 +1,9 @@
+{
+  "graphsage": {
+    "k_neighbors": 10,
+    "hidden": 128,
+    "layers": 1,
+    "lr": 0.006829617677363265,
+    "scale_pos_weight": 172.07892248971422
+  }
+}
