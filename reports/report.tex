@@ -83,6 +83,64 @@ can follow exactly what was trained and why. All 72 experiments, including failu
 logged in the accompanying experiment inventory, and every design decision is backed by a
 controlled ablation rather than a citation.
 
+\subsection{Reference studies: what they do, what they report, where we land}
+\label{sec:refstudies}
+Before any result is presented, Table~\ref{tab:refpos} fixes the comparison set. Every figure
+below was read from the cited paper, and each is paired with the number from this study that is
+actually comparable to it --- matching \emph{protocol} first, model second, because
+Section~\ref{sec:splittab} shows protocol dominates.
+
+\begin{table}[h]
+      \centering\small
+      \caption{Verified published reference points and the comparable result from this work.
+      PR-AUC throughout. The only protocol-matched row --- chronological versus chronological
+      --- is the first.}
+      \label{tab:refpos}
+      \begin{tabularx}{\textwidth}{lXlll}
+            \toprule
+            Study & Protocol / data & Theirs & Ours & $\Delta$\\
+            \midrule
+            Sang 2026~\cite{eai2026} & ULB, \textbf{chronological} & \textbf{0.7902} & \textbf{0.7947} & \textbf{+0.005}\\
+            Sang 2026~\cite{eai2026} & ULB, random stratified & 0.8815 & 0.840 & $-$0.042\\
+            IJSSE 2025~\cite{ijsse2025} & ULB, random (RF / XGB) & 0.871 / 0.867 & 0.812 / 0.810 & $-$0.059\\
+            Anand \& Chakrabarty 2025~\cite{anand2025} & ULB, random (LSTM ensemble) & 0.8269 & 0.796 & $-$0.031\\
+            HG-AE~\cite{hgae2024} & \emph{relational} graph, entity IDs & $\approx$0.89 & 0.739 & n/a\\
+            KAIS 2026~\cite{kais2026} & private bank data, random CV & 0.9879 & --- & n/a\\
+            \bottomrule
+      \end{tabularx}
+\end{table}
+
+The closest study is Sang~\cite{eai2026}, which evaluates ULB under \emph{both} protocols and is
+therefore the only fair benchmark for this work. Table~\ref{tab:techcmp} sets out what it does
+and where this study diverges.
+
+\begin{table}[h]
+      \centering\small
+      \caption{Techniques: the protocol-matched study versus this work.}
+      \label{tab:techcmp}
+      \begin{tabularx}{\textwidth}{Xll}
+            \toprule
+            Technique & Sang 2026~\cite{eai2026} & This work\\
+            \midrule
+            Chronological split & yes ($66/14/20$) & yes ($70/15/15$)\\
+            PR-AUC as primary metric & yes & yes\\
+            Threshold tuned on validation & yes ($F_1$ + amount-aware) & yes ($F_1$)\\
+            Optuna hyperparameter search & yes & yes (30 trials default)\\
+            Cost-sensitive class weighting & yes & yes (validation-selected grid)\\
+            Synthetic resampling (SMOTE/GAN) & no, by design & yes --- tested as an ablation\\
+            SHAP explainability & yes & yes\\
+            Amount-aware cost threshold & yes & no (future work)\\
+            Bootstrap confidence intervals & no & yes ($1{,}000$ replicates)\\
+            Model families compared & 2 (XGBoost, MLP) & 18 across 5 families\\
+            Graph neural network tier & no & yes (GraphSAGE, GATv2)\\
+            \bottomrule
+      \end{tabularx}
+\end{table}
+
+Read together: this study reproduces that paper's protocol and adds breadth (five model
+families, a GNN tier, seven imbalance strategies) plus uncertainty quantification, while that
+paper adds an amount-aware cost objective this study does not implement.
+
 % ============================================================================
 \section{Background: the minimum machine learning needed here}
 % ============================================================================
@@ -346,6 +404,49 @@ data.
 \section{Results}
 % ============================================================================
 
+\subsection{Head-to-head against the protocol-matched study}\label{sec:headtohead}
+Sang~\cite{eai2026} reports a chronological ULB split ($187{,}972$ train / $39{,}873$
+validation / $56{,}962$ test; 368 / 49 / 75 frauds) with an Optuna-tuned, cost-sensitive
+XGBoost and an $F_1$-optimal validation threshold --- the same protocol shape used here.
+Table~\ref{tab:h2h} places the two side by side.
+
+\begin{table}[h]
+      \centering\small
+      \caption{The only protocol-matched comparison available: chronological ULB, both studies
+      selecting the decision threshold by validation $F_1$.}
+      \label{tab:h2h}
+      \begin{tabularx}{\textwidth}{Xll}
+            \toprule
+            & Sang 2026~\cite{eai2026} & This work\\
+            \midrule
+            Model & Optuna XGBoost (cost-sensitive) & RF + SMOTE-ENN\\
+            PR-AUC & 0.7902 & \textbf{0.7947}\\
+            Precision & 0.8636 & \textbf{0.975}\\
+            Recall & \textbf{0.7600} & 0.750\\
+            $F_1$ & 0.8085 & \textbf{0.848}\\
+            FP / FN & 9 / 18 & \textbf{1 / 13}\\
+            False positives per $10^6$ legitimate & 158 & \textbf{23}\\
+            Test frauds & 75 & 52\\
+            \bottomrule
+      \end{tabularx}
+\end{table}
+
+The two PR-AUC figures differ by $0.0045$, roughly a fifth of what a single transaction is worth
+on this test set (Section~\ref{sec:boot}) --- they are the same number. The operating point
+differs more substantially: this study trades one point of recall for a seven-fold reduction in
+false-alarm rate, which for a fraud-review queue is the more consequential axis.
+
+Three further points from that paper corroborate results derived independently here. First, it
+measures the protocol gap on the same model at $0.8815 - 0.7902 = +0.0913$, larger than the
+$+0.035$ mean measured in Section~\ref{sec:splittab}, which supports treating our figure as a
+floor. Second, its Tables~4 and~5 hold PR-AUC fixed at $0.8815$ and $0.7902$ across three very
+different thresholds, confirming that threshold calibration cannot alter a ranking metric --- so
+the $0.7809 \to 0.8815$ gain it reports is attributable to hyperparameter search alone. Third,
+it independently reaches this study's framing of the dataset's horizon, describing the
+$48$-hour window as ``a short-horizon chronological validation rather than a full concept-drift
+analysis.'' Its SHAP ranking ($V14, V4, V10, V12, V8$) also overlaps ours in four of five
+positions.
+
 \subsection{Leaderboard}
 Table~\ref{tab:leaderboard} lists the top configurations of all 72 time-split runs.
 The full ledger is \code{reports/results\_classical.csv}.
@@ -531,12 +632,12 @@ waterfall (\code{shap\_waterfall\_example.png}) powers the
 \end{table}
 
 \subsection{Only the shuffled arm is comparable}
-Nearly all published ULB results use a random or stratified split, so our chronological $0.795$
-has no protocol-matched counterpart in the literature --- we found no published ULB
-chronological-split PR-AUC at all. It should be read as \emph{establishing} a reference point
-under this protocol, not as beating one. The comparable number is our shuffled arm, where our
-best configuration reaches $0.840$ and the tree models reach $0.810$--$0.812$, against
-$0.867$--$0.8815$ reported.
+Nearly all published ULB results use a random or stratified split. The one exception we located
+is Sang~\cite{eai2026}, which reports a chronological ULB PR-AUC of $0.7902$ for an
+Optuna-tuned cost-sensitive XGBoost; our champion reaches $0.7947$ at roughly one-seventh the
+false-positive rate (Section~\ref{sec:headtohead}). Against every other published figure the
+comparison must go through our shuffled arm, where our best configuration reaches $0.840$ and
+the tree models reach $0.810$--$0.812$, against $0.867$--$0.8815$ reported.
 
 One asymmetry matters when interpreting that. Our shuffled arm still applies resampling
 \emph{inside} the fitted pipeline, so it isolates the effect of destroying temporal ordering and
@@ -650,10 +751,14 @@ IEEE Trans.\ Neural Networks and Learning Systems, 29(8), 2018.
 Hybrid Data Sampling}. Machine Learning with Applications, 20:100675, 2025.
 \bibitem{anand2025} A. Anand, S. Chakrabarty. \emph{Credit Card Fraud Detection and Credit Risk
 Analysis: Machine Learning Approaches}. SSRN 5337550, 2025.
-\bibitem{kais2026} \emph{AI-Based Credit Card Fraud Detection: A Machine Learning Approach with
-Model Explainability on Real-World Data}. Knowledge and Information Systems, 2026.
+\bibitem{kais2026} \emph{AI-based credit card fraud detection: a machine learning approach with
+model explainability on real-world data}. Knowledge and Information Systems, 2026.
+DOI 10.1007/s10115-026-02773-7. (RF PR-AUC $0.9879\pm0.0008$, XGBoost $0.9874\pm0.0007$;
+nine models, four sampling strategies, private and public data.)
 \bibitem{eai2026} V. N. T. Sang. \emph{Enhancing Credit Card Fraud Detection under Severe Class
-Imbalance Using Cost-Sensitive Learning and Threshold Optimization}. EAI Endorsed Trans.\ ISMLA, 2026.
+Imbalance using Cost-Sensitive Learning and Threshold Optimization}. EAI Endorsed Transactions on
+Intelligent Systems and Machine Learning Applications, Vol.\ 3, 2026 (published 1 June 2026).
+(ULB random stratified: XGBoost PR-AUC $0.7809 \to 0.8815$; ULB chronological: $0.7902$.)
 \bibitem{hgnn2025} \emph{Detecting Credit Card Fraud via Heterogeneous Graph Neural Networks with
 Graph Attention}. arXiv:2504.08183, 2025.
 \bibitem{hgae2024} M. T. Singh et al. \emph{Heterogeneous Graph Auto-Encoder for CreditCard Fraud
