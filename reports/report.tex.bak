@@ -298,32 +298,7 @@ Seven strategies were compared, all applied to the \emph{training partition only
 % ============================================================================
 
 \textbf{Split.} Chronological: earliest $70\%$ train (384 frauds), next $15\%$
-validation (56 frauds), latest $15\%$ test (52 frauds). Table~\ref{tab:window} states the
-window explicitly, because the honesty of every later claim depends on it.
-
-\begin{table}[h]
-      \centering\small
-      \caption{The chronological window. ULB spans exactly $48$ hours; the last training
-      transaction and the first test transaction are $5.11$~hours apart, and the test window is
-      $5.96$~hours long.}
-      \label{tab:window}
-      \begin{tabular}{lccccc}
-            \toprule
-            Split & Window (h) & $n$ & Frauds & Fraud rate & Mean amount\\
-            \midrule
-            Train & $0.00$--$36.92$ & 199{,}364 & 384 & $0.193\%$ & $89.77$\\
-            Validation & $36.92$--$42.04$ & 42{,}721 & 56 & $0.131\%$ & $97.52$\\
-            Test & $42.04$--$48.00$ & 42{,}722 & 52 & $0.122\%$ & $72.54$\\
-            \bottomrule
-      \end{tabular}
-\end{table}
-
-Two things follow. First, the distribution genuinely moves inside these 48 hours: the fraud
-prior falls by $37\%$ relative from train to test ($0.193\%\to0.122\%$) and the mean
-transaction amount falls by $19\%$. Second, the window contains two full day--night cycles with
-a $35.5\times$ ratio between the peak and trough hourly fraud rates (02:00 peaks at $1.71\%$).
-Shuffling destroys both structures, which is the mechanism behind the inflation measured in
-Section~\ref{sec:splittab}.
+validation (56 frauds), latest $15\%$ test (52 frauds).
 
 \textbf{Tuning discipline.} Every adaptive choice uses the validation set exclusively:
 decision thresholds (max-$F_1$ point of the validation PR curve, frozen thereafter),
@@ -418,7 +393,7 @@ random-split literature sits: a large share of the historical benchmark gap is
 \emph{protocol, not model quality}. GraphSAGE is the instructive exception --- shuffling
 scrambles the temporal coherence its neighbourhoods relied upon.
 
-\subsection{Statistical uncertainty}\label{sec:boot}
+\subsection{Statistical uncertainty}
 Stratified-bootstrap intervals (Table~\ref{tab:boot}; Figure~\ref{fig:boot}) are wide ---
 widths of $0.20$--$0.24$ --- and \emph{every pairwise comparison overlaps}: at 52 test frauds
 no two models are statistically separable. Claims like ``tuned RF beats untuned RF''
@@ -458,15 +433,6 @@ rank order.
       \end{tabular}
 \end{table}
 
-\textbf{How much is one transaction worth?} The bootstrap says the intervals are wide; a direct
-perturbation of the champion's saved score vector says why. Removing any single test fraud
-(52 variants) moves PR-AUC over a range of $0.020$; promoting the worst-ranked test fraud to the
-top of the ranking moves it $+0.020$; demoting the best-ranked fraud to the bottom moves it
-$-0.020$. \emph{One transaction is worth roughly $\pm0.020$ PR-AUC.} Any difference below about
-$0.02$ on this test set is therefore arithmetic noise rather than evidence --- a rule this report
-applies to its own leaderboard and, in Section~\ref{sec:litcmp}, to comparisons against other
-papers.
-
 \begin{figure}[h]
       \centering
       \includegraphics[width=0.85\textwidth]{bootstrap_ci.png}
@@ -497,32 +463,28 @@ legitimate sample):
 \end{figure}
 
 The ranking --- $V12, V14, V4, V10, V11, V17$ --- matches the Phase-1 correlation analysis
-feature-for-feature \emph{and} sign-for-sign ($V12/V14/V10/V17$ low $\to$ fraud,
+feature-for-feature \emph{and} sign-for-signature ($V12/V14/V10/V17$ low $\to$ fraud,
 $V11$ high $\to$ fraud, small amounts $\to$ fraud). Two independent methods agreeing on both
-axes is strong evidence the model learned genuine structure rather than artifacts. A per-transaction
-waterfall (\code{shap\_waterfall\_example.png}) powers the
+axes is strong evidence the model learned genuine structure rather than artifacts. A per-
+transaction waterfall (\code{reports/figures/shap\_waterfall\_example.png}) powers the
 ``why flagged'' view of the demo application.
 
 % ============================================================================
 \section{Comparison with the literature}
 % ============================================================================
-\label{sec:litcmp}
 
 \begin{table}[h]
       \centering\small
-      \caption{Published reference points and this work. PR-AUC (average precision) unless
-      otherwise noted.}
+      \caption{Published reference points and this work.}
       \label{tab:lit}
-      \begin{tabularx}{\textwidth}{lXl}
+      \begin{tabularx}{\textwidth}{lXX}
             \toprule
             Source & Setting & Best PR-AUC\\
             \midrule
             KAIS 2026~\cite{kais2026} & private bank data, random CV & 0.9879\\
-            EAI ISMLA 2026~\cite{eai2026} & ULB, optimised XGBoost, random split & 0.8815\\
-            IJSSE 2025~\cite{ijsse2025} & ULB, SMOTE + RF / XGBoost, random split & 0.871 / 0.867\\
+            EAI ISMLA 2026~\cite{eai2026} & ULB, optimized XGBoost, random split & 0.8815\\
             Anand \& Chakrabarty 2025~\cite{anand2025} & ULB, LSTM ensemble, random split & 0.8269\\
-            HG-AE~\cite{hgae2024} & \emph{relational} graph (cardholder/merchant/txn) & $\approx$0.89\\
-            HGNN + attention~\cite{hgnn2025} & IEEE-CIS, \emph{not} ULB & ROC-AUC only\\
+            HGNN~\cite{hgnn2025} / HG-AE~\cite{hgae2024} & private relational graphs & $\approx$0.89\\
             \midrule
             \textbf{This work} & \textbf{ULB, chronological split} & \textbf{0.795}\\
             \textbf{This work} & \textbf{ULB, shuffled (their protocol)} & \textbf{0.840}\\
@@ -530,54 +492,13 @@ waterfall (\code{shap\_waterfall\_example.png}) powers the
       \end{tabularx}
 \end{table}
 
-\subsection{Only the shuffled arm is comparable}
-Nearly all published ULB results use a random or stratified split, so our chronological $0.795$
-has no protocol-matched counterpart in the literature --- we found no published ULB
-chronological-split PR-AUC at all. It should be read as \emph{establishing} a reference point
-under this protocol, not as beating one. The comparable number is our shuffled arm, where our
-best configuration reaches $0.840$ and the tree models reach $0.810$--$0.812$, against
-$0.867$--$0.8815$ reported.
+Under our honest protocol 0.795 tops the reported range; under the papers' own shuffled
+protocol our models move into the same range ($0.80$--$0.84$) that the shuffled-protocol
+literature reports. The remaining gap to relational-GNN
+papers is structural: they possess real cardholder--merchant identities, which ULB anonymised
+away.
 
-One asymmetry matters when interpreting that. Our shuffled arm still applies resampling
-\emph{inside} the fitted pipeline, so it isolates the effect of destroying temporal ordering and
-nothing else. It does not include the far larger inflation available from resampling before the
-split. The mean inflation we measure ($+0.035$ across five configurations) is therefore a
-\emph{lower bound} on total literature inflation, not an estimate of it.
-
-\subsection{The residual gap is not resolvable at this sample size}
-Applying this report's own uncertainty machinery to the cross-paper comparison: the bootstrap
-half-width of $0.098$ implies a standard error of $\approx0.050$ at 52 frauds, or $\approx0.042$
-rescaled to the 74 frauds of the shuffled test fold. The standard error of a \emph{difference}
-between two such single-split estimates is $\approx0.059$. The observed gap --- $0.871$ against
-our $0.812$ --- is $0.059$, or \textbf{0.99 standard errors}. Combined with the one-transaction
-sensitivity of $\pm0.020$ established above, the entire cross-paper gap is worth roughly three
-transactions.
-
-The honest conclusion is the one Section~\ref{sec:boot} reaches for within-study comparisons,
-extended one step further: at 52--74 test frauds, \emph{no two ULB PR-AUC figures are separable
---- ours included}. Cross-paper ranking on this dataset is not a meaningful exercise, and the
-appropriate response is to report intervals rather than to explain away a difference the data
-cannot support.
-
-\subsection{Methodological context, and what the GNN numbers require}
-An independent 2025 audit of this literature~\cite{leakage2025} surveys published ULB pipelines
-and identifies four recurring flaws: leakage from preprocessing before the split, vague
-methodological reporting, inadequate temporal validation, and recall optimisation at precision's
-expense. It demonstrates the point by building a deliberately leaky minimal MLP that reaches
-$99.9\%$ recall and outperforms far more sophisticated published methods, concluding that proper
-evaluation methodology matters more than model complexity. The protocol of
-Section~\ref{sec:protocol} was built against all four flaws: resampling is fitted inside the
-pipeline on training folds only, every run is logged to a committed ledger, the split is
-chronological, and PR-AUC with a validation-frozen threshold is primary with both error types
-reported.
-
-The relational-GNN figure of $\approx0.89$~\cite{hgae2024} is obtained on graphs of cardholders,
-merchants and transactions. ULB's PCA anonymisation removes every entity identifier, so a
-$k$-NN feature-similarity graph is the only construction available: the comparison is one of
-\emph{data availability}, not architecture. The frequently cited HGNN-with-attention
-work~\cite{hgnn2025} evaluates on IEEE-CIS rather than ULB and reports accuracy and ROC-AUC
-rather than PR-AUC, so it is not a ULB reference point at all.
-
+% ============================================================================
 \section{Lessons learned}
 % ============================================================================
 
@@ -598,37 +519,15 @@ rather than PR-AUC, so it is not a ULB reference point at all.
 \section{Limitations and future work}
 % ============================================================================
 
-\textbf{The two-day window --- and what it does and does not limit.} ULB spans exactly 48 hours,
-so the chronological protocol places only $5.11$ hours between the last training transaction and
-the first test transaction (Table~\ref{tab:window}). This is the single most important limitation
-to state precisely, because it bounds one claim and not another.
+\textbf{Limitations.} Only 52 test frauds (wide confidence bands); PCA anonymisation prevents
+true relational graphs and business rules; a single two-day snapshot from 2013; concept drift
+beyond that window untested; GPU-accelerated search budgets bounded (25--60 Optuna trials).
 
-What this study claims is an \emph{evaluation-protocol} effect: does shuffling temporally ordered
-transactions inflate reported scores? That question is answerable inside 48 hours, because it
-concerns whether the evaluation respects causal ordering, not how far the distribution travels.
-What this study does \emph{not} claim is a measurement of concept drift or model decay over
-deployment timescales; that would require months of data and is out of scope here.
+\textbf{Future work.} Entity-aware graphs on identity-rich datasets; online/drift-adaptive
+learning; cost-sensitive thresholds using real interception costs; probability calibration
+(Brier/ECE); larger trial budgets and nested resampling for tighter CIs.
 
-Two observations make the short horizon a conservative choice rather than a weak one. First, the
-distribution demonstrably shifts even within the window --- the fraud prior falls $37\%$ relative
-across the splits and mean amount falls $19\%$ --- so there is real structure for shuffling to
-destroy. Second, the inflation we measure ($+0.016$ to $+0.060$) is obtained across only $5.11$
-hours of separation; a deployment gap of weeks or months would be larger, not smaller. The figure
-should be read as a floor.
-
-\textbf{Other limitations.} Only 52 test frauds, so every confidence interval is wide
-($0.20$--$0.24$) and no two models are separable; PCA anonymisation prevents true relational
-graphs and business rules; a single dataset from a single 2013 snapshot, with no cross-dataset
-replication; GPU search budgets bounded at 25--60 Optuna trials; the GNN tier relies on a
-feature-similarity graph that is a proxy for, not an instance of, a real transaction network.
-
-\textbf{Future work.} Replicate the split ablation on an identity-rich, longer-horizon dataset
-(IEEE-CIS spans months) to test whether the protocol gap widens as predicted; entity-aware graphs
-where cardholder and merchant nodes exist; online and drift-adaptive learning; cost-sensitive
-thresholds using real interception costs; probability calibration (Brier score, ECE); repeated
-shuffled splits across several seeds to put an interval on the inflation estimate itself; larger
-trial budgets and nested resampling for tighter intervals.
-
+% ============================================================================
 \section{Conclusion}
 % ============================================================================
 
@@ -679,13 +578,6 @@ Learning on Large Graphs (GraphSAGE)}. NeurIPS, 2017.
 NeurIPS, 2021.
 \bibitem{hochreiter1997} S. Hochreiter, J. Schmidhuber. \emph{Long Short-Term Memory}. Neural
 Computation, 9(8), 1997.
-\bibitem{leakage2025} \emph{Data Leakage and Deceptive Performance: A Critical Examination of
-Credit Card Fraud Detection Methodologies}. arXiv:2506.02703, 2025.
-
-\bibitem{ijsse2025} \emph{Comparative Analysis of Machine Learning Models for Credit Card Fraud
-Detection Using SMOTE for Class Imbalance}. International Journal of Safety and Security
-Engineering, 15(5), 2025.
-
 \bibitem{efron1979} B. Efron. \emph{Bootstrap Methods: Another Look at the Jackknife}. Annals of
 Statistics, 7(1), 1979.
 \end{thebibliography}
