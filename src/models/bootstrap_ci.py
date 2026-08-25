@@ -75,11 +75,11 @@ def get_test_scores(key: str, splits):
         Xs = [torch.as_tensor(scaler.transform(a).astype(np.float32)) for a in (X_tr, X_va, X_te)]
         ys = [torch.as_tensor(np.asarray(s, dtype=np.float32)) for s in (y_tr, y_va, y_te)]
         pos_w = float((ys[0] == 0).sum()) / max(float(ys[0].sum()), 1.0)
-        ei_tr = build_knn_graph(X_tr.astype(np.float32), k=10)
-        ei_te = build_knn_graph(X_te.astype(np.float32), k=10)
+        ei_tr = build_knn_graph(Xs[0].numpy(), k=10)
+        ei_te = build_knn_graph(Xs[2].numpy(), k=10)
         model = SageNet(Xs[0].shape[1])
         model = train_graph_model(model, Xs[0], ei_tr, ys[0], Xs[1],
-                                  build_knn_graph(X_va.astype(np.float32), k=10),
+                                  build_knn_graph(Xs[1].numpy(), k=10),
                                   ys[1], pos_weight=pos_w, epochs=40, patience=6)
         logits = predict_logits(model, Xs[2].to(DEVICE), ei_te.to(DEVICE))
         probs = _sigmoid(logits)

@@ -40,7 +40,7 @@ XGBoost/CatBoost also run on GPU via `device="cuda"`; LightGBM stays on CPU.
 Stratified resampling of the test set ×1,000 per model gives 95% CIs of width
 **~0.20–0.25 PR-AUC** for every tier representative — **all pairs overlap**
 (statistical ties). At 52 test frauds, no model is separable from another;
-the honest conclusion is a shared ~0.63–0.89 band, not a ranking.
+the honest conclusion is a shared ~0.72–0.89 band, not a ranking.
 
 ## Demo App
 
@@ -65,10 +65,14 @@ Test = latest 15% of transactions (42,722 txns, 52 frauds), untouched distributi
 Threshold tuned on validation set. Full table: `reports/results_classical.csv`.
 
 *Protocol footnotes:* sequence models (LSTM/BiLSTM) drop the first 7 test rows that lack an
-8-step window — fraud counts are unaffected (52/52). Neural/GNN tiers carry GPU
-nondeterminism: three invocations of the *identical* GraphSAGE configuration spanned
-0.631–0.756 PR-AUC (full-batch training takes only 40 gradient steps, and early stopping
-picks its checkpoint on a 56-fraud validation set); tree tiers reproduce bit-exactly.
+8-step window — fraud counts are unaffected (52/52). Run-to-run variance is family-dependent
+and small: tree tiers reproduce bit-exactly; MLP/LSTM vary ~0.01; GraphSAGE ~0.02 across four
+scaled-graph invocations (0.724–0.756). *Erratum:* an earlier version of this footnote reported
+a 0.13-wide "GraphSAGE instability" — that was an artifact of one harness building its k-NN
+graphs on unscaled features (where `Amount` owns ~99.9% of the Euclidean distance budget,
+discarding the signal-bearing V-features); fixed and re-measured. Step-budget asymmetry:
+full-batch SAGE takes ≤40 optimizer steps vs ~5,850 for mini-batched GAT, but a 300-step SAGE
+probe converges to the same 0.756, so no conclusion changes.
 
 | Rank | Model | Strategy | PR-AUC | F1 | MCC | FP | FN |
 |---|---|---|---|---|---|---|---|

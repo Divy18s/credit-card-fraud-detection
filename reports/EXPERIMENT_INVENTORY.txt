@@ -297,12 +297,16 @@ Raw ledger: reports/results_classical.csv (72 runs)
       Health-checked headless (200 OK).
   [x] Bootstrap confidence intervals - DONE (src/models/bootstrap_ci.py):
       stratified resampling x1000 per tier representative. Every 95% CI spans
-      ~[0.50, 0.89] (width 0.20-0.25) and ALL pairwise comparisons are
+      ~[0.60, 0.89] (width 0.20-0.25) and ALL pairwise comparisons are
       statistical ties -> at 52 test frauds no model is separable; earlier
-      "+-0.02 noise" guess was conservative. GraphSAGE additionally shows
-      severe run-to-run instability: three identical-config invocations
-      spanned 0.631-0.756 (full-batch = 40 gradient steps total; checkpoint
-      picked on a 56-fraud validation set). See reports/bootstrap_ci.csv +
+      "+-0.02 noise" guess was conservative. Run-to-run variance is
+      family-dependent: trees bit-exact, MLP/LSTM ~0.01, GraphSAGE ~0.02
+      (0.724-0.756 across four scaled-graph invocations; a 300-step probe
+      converges to 0.756, so the SAGE-vs-GAT step-budget asymmetry changes
+      nothing). ERRATUM: an interim bootstrap run reported "GraphSAGE
+      instability 0.631-0.756" - that was a harness bug (its k-NN graphs were
+      built on unscaled features, letting Amount own ~99.9% of the distance
+      budget); fixed and re-measured. See reports/bootstrap_ci.csv +
       reports/figures/bootstrap_ci.png.
   [x] Final report/notebook consolidation - DONE:
       notebooks/02_final_report.ipynb (executed end-to-end) - leaderboard,

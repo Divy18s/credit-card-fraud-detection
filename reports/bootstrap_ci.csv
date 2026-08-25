@@ -4,4 +4,4 @@ catboost_gan,catboost,gan,0.7804,0.6742,0.8802,0.206,1000,80.3
 lstm_weighted,lstm,class_weight,0.7803,0.669,0.8791,0.2101,1000,22.5
 mlp_raw,mlp,raw,0.7794,0.6713,0.8771,0.2058,1000,56.1
 xgb_smote_enn,xgboost,smote_enn,0.7766,0.6695,0.8803,0.2108,1000,124.5
-graphsage,graphsage,class_weight,0.6306,0.5027,0.7497,0.247,1000,30.5
+graphsage,graphsage,class_weight,0.7242,0.601,0.837,0.236,1000,50.9

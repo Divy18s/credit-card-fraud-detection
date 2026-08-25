@@ -397,12 +397,17 @@ scrambles the temporal coherence its neighbourhoods relied upon.
 Stratified-bootstrap intervals (Table~\ref{tab:boot}; Figure~\ref{fig:boot}) are wide ---
 widths of $0.20$--$0.25$ --- and \emph{every pairwise comparison overlaps}: at 52 test frauds
 no two models are statistically separable. Claims like ``tuned RF beats untuned RF''
-($0.7936$ vs $0.7947$) are correctly described as ties. GraphSAGE additionally exhibits severe
-run-to-run instability: three invocations of the identical configuration (same seed, same
-40-epoch budget) spanned $0.631$--$0.756$, because full-batch training takes only 40 gradient
-steps in total and the early-stopping checkpoint is selected on a validation set containing 56
-frauds. This reframes the deliverable: the enduring value is the protocol and the ablation
-evidence, not rank order.
+($0.7936$ vs $0.7947$) are correctly described as ties. Run-to-run variance is family-dependent
+and small: the tree tiers reproduce bit-exactly, MLP and LSTM vary by $\approx 0.01$, and
+GraphSAGE by $\approx 0.02$ across four scaled-graph invocations ($0.724$--$0.756$). An earlier
+draft of this section reported a $0.13$-wide ``GraphSAGE instability''; that was an artifact of
+a harness bug (its $k$-NN graphs were built on unscaled features, where \code{Amount} owns
+$99.9\%$ of the Euclidean distance budget and the informative $V$-features are effectively
+discarded) and has been retracted. A separate asymmetry is worth noting: full-batch SAGE takes
+at most 40 optimizer steps versus $\approx 5{,}850$ for mini-batched GAT, yet a 300-step SAGE
+probe converges to the same $0.756$ --- so the budget gap does not change any conclusion. This
+reframes the deliverable: the enduring value is the protocol and the ablation evidence, not
+rank order.
 
 \begin{table}[h]
       \centering\small
@@ -417,7 +422,7 @@ evidence, not rank order.
             CatBoost + GAN & 0.780 & [0.674, 0.880] & 0.206\\
             XGBoost + SMOTE-ENN & 0.777 & [0.670, 0.880] & 0.211\\
             LSTM + weight & 0.771 & [0.658, 0.871] & 0.213\\
-            GraphSAGE + weight & 0.631 & [0.503, 0.750] & 0.247\\
+            GraphSAGE + weight & 0.724 & [0.601, 0.837] & 0.236\\
             \bottomrule
       \end{tabular}
 \end{table}
