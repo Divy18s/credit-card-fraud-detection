@@ -17,3 +17,4 @@ catboost_info/
 src/models/artifacts/
 reports/scores/
 !reports/figures/*.png
+*.bak
