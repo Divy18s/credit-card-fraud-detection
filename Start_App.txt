@@ -1,0 +1,2 @@
+cd C:\Personal\IIT_HYD\Project
+.venv\Scripts\streamlit run app/streamlit_app.py

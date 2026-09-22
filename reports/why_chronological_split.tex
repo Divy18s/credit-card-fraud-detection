@@ -1,0 +1,244 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\captionsetup{font=small,labelfont=bf}
+\definecolor{accent}{RGB}{140,21,21}
+\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\hi}[1]{\textbf{\textcolor{accent}{#1}}}
+
+\title{\vspace{-1.4cm}\textbf{Why This Study Evaluates Chronologically}\\[0.3cm]
+\large The argument, the published support, and our own controlled measurement\\[0.4cm]}
+\author{Divyaraj Chudasama \\ Indian Institute of Technology Hyderabad}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{The claim}
+This study evaluates on a \emph{chronological} split --- train on the earliest transactions,
+test on the latest --- rather than the random stratified split used by most published work on
+the ULB dataset.
+
+The justification is a \hi{validity} argument, not a performance one. A chronological split is
+correct because it is the only protocol whose question has a deployment counterpart. Whether it
+also produces lower scores is a separate, empirical matter, addressed in
+Section~\ref{sec:evidence}.
+
+\section{Why a random split asks the wrong question}
+A random split assigns transactions to train and test by coin flip. The model is therefore
+fitted on transactions that occurred \emph{after} the ones it is scored on. No deployed fraud
+system can do this: at scoring time, the future has not happened yet. Three consequences are
+measurable directly on ULB.
+
+\paragraph{(a) The distribution moves, even inside 48 hours.}
+ULB spans exactly $48$ hours. Across our chronological partitions the fraud prior falls by
+$37\%$ relative and the mean transaction amount by $19\%$:
+
+\begin{center}\small
+\begin{tabular}{lcccc}
+      \toprule
+      Partition & Window (h) & Frauds & Fraud rate & Mean amount\\
+      \midrule
+      Train & $0.00$--$36.92$ & 384 & $0.193\%$ & $89.77$\\
+      Validation & $36.92$--$42.04$ & 56 & $0.131\%$ & $97.52$\\
+      Test & $42.04$--$48.00$ & 52 & $0.122\%$ & $72.54$\\
+      \bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The window also covers two full day--night cycles with a $35.5\times$ ratio between
+the peak and trough hourly fraud rates ($02$:$00$ peaks at $1.71\%$). Shuffling destroys all of
+this structure by construction: it makes the train and test distributions identical by
+definition, which is precisely the condition a deployed model does not enjoy.
+
+\paragraph{(b) Shuffling separates duplicate transactions into train and test.}
+ULB contains $1{,}081$ exact duplicate rows. All $773$ duplicate groups share a single
+\code{Time} value, so chronological sorting places every copy adjacent to its twin and they
+always land in the same partition. Measured across all three boundaries:
+
+\begin{center}\small
+\begin{tabular}{lcccc}
+      \toprule
+      & Train$\to$Test & Train$\to$Val & Val$\to$Test & Total leaked\\
+      \midrule
+      Chronological split & 0 & 0 & 0 & \hi{0}\\
+      Random split & 249 & 207 & 61 & \hi{517}\\
+      \bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Under shuffling the model is fitted on a row and then scored on a byte-identical copy
+of it. That is memorisation being reported as generalisation, and the chronological protocol is
+immune to it for free --- without deleting any data.
+
+\paragraph{(c) The resulting estimate has no operational meaning.}
+A random-split score answers ``how well would this model rank transactions if it had already
+seen the future?'' That number cannot be used to size a review queue, set an alert threshold, or
+forecast caseload, because the condition it assumes never holds in production.
+
+\section{What the published literature says}
+The four sources below support the \emph{principle}. We deliberately do not compare our absolute
+scores to theirs --- see Section~\ref{sec:nomatch}.
+
+\begin{itemize}[itemsep=4pt]
+      \item \textbf{Dal Pozzolo, Boracchi, Caelen, Alippi and Bontempi (2018)}, \emph{Credit Card
+            Fraud Detection: A Realistic Modeling and a Novel Learning Strategy}, IEEE
+            Transactions on Neural Networks and Learning Systems 29(8):3784--3797. \\
+            \small\url{https://re.public.polimi.it/bitstream/11311/1044896/1/08038008.pdf}\\
+            \normalsize These are the authors of the ULB dataset itself. They formalise fraud
+            detection around three operating conditions --- \emph{concept drift} (customer habits
+            evolve and fraudsters change strategy over time), class imbalance, and
+            \emph{verification latency} (only a small set of transactions is checked in time) ---
+            and argue that a realistic evaluation must reflect them. Concept drift and
+            verification latency are both inherently temporal; a shuffled split represents
+            neither.
+
+      \item \textbf{Sang (2026)}, \emph{Enhancing Credit Card Fraud Detection under Severe Class
+            Imbalance using Cost-Sensitive Learning and Threshold Optimization}, EAI Endorsed
+            Transactions on ISMLA, Vol.~3. \\
+            \small\url{https://publications.eai.eu/index.php/ismla/article/view/12078}\\
+            \normalsize The only study we located that evaluates ULB under \emph{both} protocols.
+            It reports that the chronological split yields lower PR-AUC than the random one and
+            concludes that ``random stratification may provide optimistic estimates for this
+            benchmark dataset when earlier and later transactions are mixed across training,
+            validation, and test partitions.'' It also lists, among the gaps motivating the work,
+            that ``random stratified validation can mix earlier and later transactions,
+            potentially overstating future-period performance,'' and describes its own
+            chronological experiment as evaluating ``deployment realism.''
+
+      \item \textbf{\emph{Data Leakage and Deceptive Performance: A Critical Examination of
+            Credit Card Fraud Detection Methodologies}} (2025), arXiv:2506.02703. \\
+            \small\url{https://arxiv.org/abs/2506.02703}\\
+            \normalsize An audit of published ULB pipelines. It identifies four recurring flaws,
+            of which the third is \emph{``inadequate temporal validation for transaction
+            data.''} It demonstrates the stakes by constructing a deliberately leaky minimal MLP
+            that reaches $99.9\%$ recall and outperforms far more sophisticated published
+            methods, concluding that ``proper evaluation methodology matters more than model
+            complexity in fraud detection research.''
+
+      \item \textbf{Khaleghpour and McKinney}, \emph{Leakage Safe Graph Features for
+            Interpretable Fraud Detection in Temporal Transaction Networks}, arXiv:2603.06632. \\
+            \small\url{https://arxiv.org/abs/2603.06632}\\
+            \normalsize Applies a strict chronological split to the Elliptic dataset --- a
+            different dataset, cited here only for the principle --- on the grounds that it
+            ``reflects a realistic deployment setting in which models are trained on historical
+            data and evaluated on future transactions.'' It observes that the illicit rate
+            decreases across time, ``indicating temporal distribution shift that can affect
+            generalization,'' and reports a substantial drop from validation to the held-out
+            future test period.
+\end{itemize}
+
+\section{Our own controlled measurement}\label{sec:evidence}
+The literature establishes the principle. To measure the \emph{size} of the effect we compare
+our own models against themselves, holding everything fixed --- same data, same features, same
+code, same hyperparameters, same threshold rule --- and changing only how rows are assigned to
+partitions. This is the only comparison in which the split is the sole variable.
+
+\begin{table}[h]
+      \centering\small
+      \caption{Chronological versus random, everything else held constant.}
+      \label{tab:controlled}
+      \begin{tabularx}{\textwidth}{Xccc}
+            \toprule
+            Configuration & chronological & random & random $-$ chrono\\
+            \midrule
+            \multicolumn{4}{l}{\emph{at $70/15/15$}}\\
+            XGBoost + class weight & 0.7688 & 0.8372 & $+0.0684$\\
+            XGBoost + SMOTE-ENN & 0.7766 & 0.8104 & $+0.0338$\\
+            CatBoost + GAN & 0.7804 & 0.8399 & $+0.0595$\\
+            MLP raw & 0.7794 & 0.8267 & $+0.0473$\\
+            LSTM + class weight & 0.7803 & 0.7965 & $+0.0162$\\
+            RF + SMOTE-ENN & 0.7947 & 0.8120 & $+0.0173$\\
+            GraphSAGE + weight & 0.7389 & 0.6948 & $-0.0441$\\
+            \cmidrule(l){2-4}
+            & \multicolumn{3}{r}{\emph{mean $+0.0283$, positive in 6 of 7}}\\
+            \midrule
+            \multicolumn{4}{l}{\emph{at $66/14/20$}}\\
+            XGBoost + class weight & 0.8055 & 0.8291 & $+0.0236$\\
+            XGBoost + SMOTE-ENN & 0.8102 & 0.8020 & $-0.0082$\\
+            RF + SMOTE-ENN & 0.8224 & 0.7907 & $-0.0317$\\
+            \cmidrule(l){2-4}
+            & \multicolumn{3}{r}{\emph{mean $-0.0054$, positive in 1 of 3}}\\
+            \bottomrule
+      \end{tabularx}
+\end{table}
+
+Pooling all ten paired measurements:
+\[
+  \text{random} - \text{chronological} \;=\; +0.0182,\qquad
+  \text{95\% CI } [-0.0084,\, +0.0448],\qquad
+  \text{positive in } 7/10 .
+\]
+
+\paragraph{Honest reading.} The direction agrees with theory and with every source in Section~3,
+and the point estimate is positive. But the interval includes zero ($t = 1.55$, one-sided sign
+test $p = 0.172$), and the estimate is not stable across cut points. \hi{Our data show the
+direction, not a reliable magnitude.} Two further notes bound the interpretation:
+
+\begin{itemize}[itemsep=2pt]
+      \item Our random arm carries the $517$ leaked duplicate rows documented above, which
+            inflates it. The measurement is therefore biased \emph{towards} finding a larger
+            effect, not a smaller one.
+      \item Our random arm applies all resampling \emph{inside} the fitted pipeline, so it
+            captures the ordering effect only. It excludes the resample-before-split channel that
+            arXiv:2506.02703 identifies as common in published work, which is the larger of the
+            two.
+\end{itemize}
+
+\noindent Neither of these changes the conclusion of Section~1: the case for chronological
+evaluation rests on validity, and would stand even if the two protocols scored identically.
+
+\section{Why we do not match numbers with the published studies}\label{sec:nomatch}
+Absolute PR-AUC figures are not comparable across these papers, and this study does not treat
+them as though they were. The reasons are concrete:
+
+\begin{itemize}[itemsep=3pt]
+      \item \textbf{Different architectures and objectives.} Sang (2026) uses cost-sensitive
+            XGBoost and an MLP trained with weighted BCE plus Focal Loss, with synthetic
+            oversampling deliberately excluded. This study's champion is a Random Forest with
+            SMOTE-ENN. These are different models solving the problem in different ways.
+      \item \textbf{Different search budgets and spaces.} Sang tunes with Optuna over tree depth,
+            minimum child weight, learning rate, subsampling ratios, regularisation coefficients
+            and the positive-class weight; the trial count is not stated. This study uses 30
+            Optuna trials by default, and on the random arms varied only that one weighting
+            parameter over a six-point grid. A difference in score between the two is at least as
+            likely to reflect search effort as model quality.
+      \item \textbf{Undocumented preprocessing.} Several studies do not state where resampling
+            sits relative to the split, or whether duplicates were removed. Those choices move
+            the metric more than the model does, and cannot be reconstructed from the papers.
+      \item \textbf{Different data.} Some headline figures are obtained on private datasets with
+            far more fraud cases, where interval widths are an order of magnitude tighter for
+            reasons of sample size alone.
+      \item \textbf{Measurement precision.} On this test set a single transaction is worth
+            $\pm0.020$ PR-AUC and bootstrap intervals are $0.196$--$0.236$ wide. Differences of
+            the size usually discussed between papers are smaller than the error bars on either
+            side of the comparison.
+\end{itemize}
+
+\noindent For these reasons the evidence offered here is Table~\ref{tab:controlled}, in which
+the split is the only thing that changes, rather than any comparison of this study's absolute
+scores against a published leaderboard.
+
+\section{Conclusion}
+\begin{enumerate}[itemsep=3pt]
+      \item Chronological evaluation is used because it is the only protocol whose question a
+            deployed system could answer. This holds regardless of the scores it produces.
+      \item On ULB specifically, shuffling destroys measurable temporal structure and separates
+            $517$ duplicate rows across the train/test boundary; the chronological split leaks
+            none.
+      \item The dataset's own authors, and three subsequent studies, all argue for temporally
+            faithful evaluation on the same grounds.
+      \item Our controlled measurement puts the effect at $+0.018$ PR-AUC with a confidence
+            interval that includes zero. The direction is consistent; the magnitude is not
+            established at this sample size, and we do not claim it is.
+\end{enumerate}
+
+\end{document}

@@ -1,0 +1,25 @@
+======================================================================
+SHAP EXPLAINABILITY SUMMARY - RF + SMOTE-ENN CHAMPION
+======================================================================
+Explained rows      : 3052 (52 frauds, 3000 legit sample)
+Base value (logit)  : 0.5010
+
+Rank Feature     mean|SHAP|  Pushes toward
+---------------------------------------------
+1    V12         0.0906      LOW value  -> fraud
+2    V14         0.0722      LOW value  -> fraud
+3    V4          0.0710      HIGH value -> fraud
+4    V10         0.0529      LOW value  -> fraud
+5    V11         0.0456      HIGH value -> fraud
+6    V17         0.0454      LOW value  -> fraud
+7    V16         0.0210      LOW value  -> fraud
+8    V3          0.0192      LOW value  -> fraud
+9    V1          0.0158      LOW value  -> fraud
+10   V7          0.0104      LOW value  -> fraud
+11   log_Amount  0.0085      LOW value  -> fraud
+12   Amount      0.0075      HIGH value -> fraud
+13   V18         0.0063      LOW value  -> fraud
+14   V2          0.0060      HIGH value -> fraud
+15   V9          0.0054      LOW value  -> fraud
+
+Figures: reports/figures/shap_*.png

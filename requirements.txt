@@ -1,0 +1,39 @@
+# Core
+pandas>=2.2
+numpy>=1.26
+pyarrow>=17.0
+scikit-learn>=1.5
+joblib>=1.4
+tqdm>=4.66
+
+# Imbalance handling
+imbalanced-learn>=0.12
+
+# Gradient boosting
+xgboost>=2.1
+lightgbm>=4.5
+catboost>=1.2
+
+# Deep learning
+# Default `pip install` gives the CPU build of torch on Windows.
+# CUDA build (RTX 50xx / sm_120) already applied in .venv:
+#   python -m uv pip install --python .venv "torch==2.13.0" ^
+#     --index-url https://download.pytorch.org/whl/cu130 --reinstall-package torch
+torch>=2.4
+torch-geometric>=2.6
+
+# Hyperparameter tuning
+optuna>=4.0
+
+# Explainability
+shap>=0.46
+
+# Visualization
+matplotlib>=3.9
+seaborn>=0.13
+
+# App + tooling
+streamlit>=1.38
+kaggle>=1.6
+jupyter>=1.1
+ipykernel>=6.29
