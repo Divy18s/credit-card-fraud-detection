@@ -1,0 +1,9 @@
+Credit Card Fraud Detection | Python, scikit-learn, XGBoost, PyTorch, PyTorch Geometric (GITHUB) — Aug 2026
+
+• Benchmarked 72 fraud-detection pipelines across classical ML, gradient boosting, LSTM/Transformer, GAN oversampling and GNNs on 284,807 transactions (0.17% fraud) under a chronological split with in-pipeline resampling and validation-only tuning.
+
+• Delivered a Random Forest + SMOTE-ENN champion with PR-AUC 0.795 and F1 0.848, reaching 97.5% precision at 75% recall with 1 false positive in 42,722 future transactions, served in a Streamlit app with per-prediction SHAP explanations.
+
+• Quantified uncertainty with a 1,000× stratified bootstrap: 95% CIs span 0.20–0.24 and all 15 model pairs overlap, with one test fraud worth ±0.020 PR-AUC, so results are reported as a performance band rather than a false ranking.
+
+• Showed random shuffling leaks 517 duplicate rows across partitions (0 chronologically) and pre-registered a replication of a published benchmark, landing 0.37 SE from its PR-AUC (0.8055 vs 0.7902).
